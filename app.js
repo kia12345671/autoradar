@@ -39,11 +39,14 @@
   // 2. Resolve API_BASE URL
   // Config constant for Gist raw URL (can be set directly or overridden via window.GIST_RAW_URL or window.APP_CONFIG?.GIST_RAW_URL)
   const GIST_RAW_URL = "https://gist.githubusercontent.com/kia12345671/5534ab2a9ceb849ff045a21fc918b2d8/raw/api_config.json";
+  const GIST_API_URL = "https://api.github.com/gists/5534ab2a9ceb849ff045a21fc918b2d8";
 
   let _resolvedApiBase = null;
 
-  async function resolveApiBase() {
-    if (_resolvedApiBase) {
+  async function resolveApiBase(forceRefresh = false) {
+    if (forceRefresh === true) {
+      _resolvedApiBase = null;
+    } else if (_resolvedApiBase) {
       return _resolvedApiBase;
     }
 
@@ -56,13 +59,39 @@
       return _resolvedApiBase;
     }
 
-    // 2) If GIST_RAW_URL is configured in frontend
+    // 2) Query GitHub Gist: first try GIST_API_URL, then GIST_RAW_URL fallback
+    const gistApi = GIST_API_URL || window.GIST_API_URL || window.APP_CONFIG?.GIST_API_URL || '';
+    if (gistApi && gistApi.trim()) {
+      try {
+        const sep = gistApi.includes('?') ? '&' : '?';
+        const apiUrl = gistApi.trim() + sep + 't=' + Date.now();
+        const resp = await fetch(apiUrl, {
+          cache: 'no-store',
+          headers: { 'Accept': 'application/vnd.github+json' }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const fileObj = data?.files?.['api_config.json'];
+          if (fileObj && fileObj.content) {
+            const parsed = JSON.parse(fileObj.content);
+            if (parsed && parsed.api_url && String(parsed.api_url).trim()) {
+              _resolvedApiBase = String(parsed.api_url).trim().replace(/\/+$/, '');
+              localStorage.setItem('api_base', _resolvedApiBase);
+              return _resolvedApiBase;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to resolve api_url from GIST_API_URL:', e);
+      }
+    }
+
     const gistRaw = GIST_RAW_URL || window.GIST_RAW_URL || window.APP_CONFIG?.GIST_RAW_URL || '';
     if (gistRaw && gistRaw.trim()) {
       try {
         const sep = gistRaw.includes('?') ? '&' : '?';
         const gistUrl = gistRaw.trim() + sep + 't=' + Date.now();
-        const resp = await fetch(gistUrl);
+        const resp = await fetch(gistUrl, { cache: 'no-store' });
         if (resp.ok) {
           const data = await resp.json();
           if (data && data.api_url && String(data.api_url).trim()) {
@@ -76,11 +105,13 @@
       }
     }
 
-    // Fallback: check stored api_base
-    const stored = localStorage.getItem('api_base');
-    if (stored && stored.trim()) {
-      _resolvedApiBase = stored.trim().replace(/\/+$/, '');
-      return _resolvedApiBase;
+    // Fallback: check stored api_base (only if not forceRefresh)
+    if (!forceRefresh) {
+      const stored = localStorage.getItem('api_base');
+      if (stored && stored.trim()) {
+        _resolvedApiBase = stored.trim().replace(/\/+$/, '');
+        return _resolvedApiBase;
+      }
     }
 
     // 3) window.location.origin (with http fallback for local file:// testing)
@@ -130,8 +161,6 @@
 
   // API Fetch Helper with Telegram auth header and 2 automatic retries on network drops / 502/503/504
   async function apiFetch(path, options = {}) {
-    const apiBase = await resolveApiBase();
-    const url = `${apiBase}${path}`;
     // Read window.Telegram.WebApp.initData dynamically on every request
     const dynamicInitData = window.Telegram?.WebApp?.initData || tg?.initData || '';
     const headers = {
@@ -144,6 +173,16 @@
     const retryDelays = [800, 1500];
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        try {
+          await resolveApiBase(true);
+        } catch (e) {
+          console.warn('[apiFetch] Error refreshing api_base on retry:', e);
+        }
+      }
+      const apiBase = await resolveApiBase();
+      const url = `${apiBase}${path}`;
+
       try {
         const resp = await fetch(url, { ...options, headers });
         if (resp.status === 204) {
