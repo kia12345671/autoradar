@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>АвтоРадар — Мониторинг авто</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-main">
+        <div class="header-brand">
+          <span class="brand-icon">🚗</span>
+          <div class="brand-text">
+            <h1 class="brand-title">АвтоРадар</h1>
+            <span class="brand-subtitle">Коммерческий поиск авто</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div id="sub-badge" class="badge-pill loading">Загрузка...</div>
+          <button id="btn-api-settings" class="icon-btn" title="Настройки API" aria-label="API Settings">⚙️</button>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="tabs-nav">
+        <button id="tab-btn-filters" class="tab-btn active" data-tab="filters">
+          <span class="tab-icon">🔍</span>
+          <span>Мои поиски</span>
+          <span id="filters-counter" class="counter-badge">0</span>
+        </button>
+        <button id="tab-btn-stopwords" class="tab-btn" data-tab="stopwords">
+          <span class="tab-icon">⛔</span>
+          <span>Стоп-слова</span>
+          <span id="stopwords-counter" class="counter-badge">0</span>
+        </button>
+        <button id="tab-btn-admin" class="tab-btn hidden" data-tab="admin">
+          <span class="tab-icon">👑</span>
+          <span>Админ</span>
+          <span id="admin-users-counter" class="counter-badge">0</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-content">
+      <!-- Tab 1: Filters -->
+      <section id="tab-filters" class="tab-view active">
+        <div class="section-actions">
+          <button id="btn-create-filter" class="primary-btn pulse-glow">
+            <span class="btn-icon">＋</span>
+            <span>Добавить поиск</span>
+          </button>
+        </div>
+
+        <div id="filters-loading" class="state-container">
+          <div class="spinner"></div>
+          <p>Загрузка ваших поисков...</p>
+        </div>
+
+        <div id="filters-empty" class="state-container hidden">
+          <div class="state-icon">🚘</div>
+          <h3>Нет активных поисков</h3>
+          <p>Создайте свой первый фильтр поиска, чтобы получать новые объявления прямо в Telegram.</p>
+          <button class="secondary-btn" onclick="document.getElementById('btn-create-filter').click()">Настроить первый авто</button>
+        </div>
+
+        <div id="filters-list" class="cards-grid">
+          <!-- Filter cards inserted via app.js -->
+        </div>
+      </section>
+
+      <!-- Tab 2: Stopwords -->
+      <section id="tab-stopwords" class="tab-view hidden">
+        <div class="stopwords-card">
+          <div class="stopwords-header">
+            <h3>Исключение нежелательных авто</h3>
+            <p class="section-hint">Объявления, содержащие эти слова в названии или описании, будут отсекаться автоматически.</p>
+          </div>
+
+          <div class="stopwords-input-row">
+            <input type="text" id="new-stopword-input" class="text-input" placeholder="Введите стоп-слово..." maxlength="40">
+            <button id="btn-add-stopword" class="action-btn">Добавить</button>
+          </div>
+
+          <div class="stopwords-chips-container" id="stopwords-container">
+            <!-- Chips inserted via app.js -->
+          </div>
+
+          <div class="quick-stopwords-section">
+            <span class="quick-stopwords-title">Быстрое добавление:</span>
+            <div class="quick-stopwords-row" id="quick-stopwords-tab">
+              <!-- Inserted via app.js -->
+            </div>
+          </div>
+
+          <div class="stopwords-footer">
+            <button id="btn-reset-stopwords" class="text-btn">Сбросить всё</button>
+            <button id="btn-save-stopwords" class="primary-btn">
+              <span>Сохранить стоп-слова</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 3: Admin Management (Admin only) -->
+      <section id="tab-admin" class="tab-view hidden">
+        <div class="admin-card">
+          <div class="admin-header">
+            <div class="admin-title-row">
+              <h3>👑 Управление пользователями и VIP</h3>
+              <button id="btn-admin-refresh" class="btn-small">🔄 Обновить</button>
+            </div>
+            <p class="section-hint">Управление тарифными планами, сроками VIP-доступа и слотами активных фильтров.</p>
+          </div>
+
+          <div id="admin-users-loading" class="state-container">
+            <div class="spinner"></div>
+            <p>Загрузка списка пользователей...</p>
+          </div>
+
+          <div id="admin-users-list" class="admin-users-grid">
+            <!-- User cards inserted via app.js -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Sheet Modal for Create/Edit Filter -->
+    <div id="filter-modal" class="modal-overlay hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2 id="modal-title">Новый поиск</h2>
+          <button id="btn-modal-close" class="close-btn" aria-label="Закрыть">✕</button>
+        </div>
+
+        <form id="filter-form" class="sheet-body">
+          <!-- Hidden Inputs for Selection State -->
+          <input type="hidden" id="f-search-mode" value="exact">
+          <input type="hidden" id="f-make" value="">
+          <input type="hidden" id="f-model" value="">
+          <input type="hidden" id="f-display-name" value="">
+          <input type="hidden" id="f-drom-make" value="">
+          <input type="hidden" id="f-drom-model" value="">
+          <input type="hidden" id="f-autoru-make" value="">
+          <input type="hidden" id="f-autoru-model" value="">
+          <input type="hidden" id="f-avito-query" value="">
+          <input type="hidden" id="f-gearbox" value="ANY">
+
+          <!-- Location: Strict City Autocomplete -->
+          <div class="form-group cascading-group">
+            <div class="form-label-row">
+              <label class="form-label" for="city-input">Город поиска</label>
+              <span class="form-badge-hint" id="city-status-hint">Выберите из списка</span>
+            </div>
+            
+            <div class="cascading-input-wrapper" id="city-input-wrapper">
+              <input type="text" id="city-input" class="text-input" placeholder="Введите город (Москва, Ступино...)" autocomplete="off">
+              <button type="button" id="btn-clear-city" class="input-clear-btn" aria-label="Сбросить город">✕</button>
+            </div>
+
+            <!-- City Dropdown -->
+            <div id="city-dropdown" class="cascading-dropdown hidden"></div>
+            <div id="city-error-hint" class="input-error-msg hidden">Выберите город из списка (или оставьте Москву)</div>
+
+            <!-- Radius Selector Group -->
+            <div id="radius-selector-group" class="radius-selector-group">
+              <div class="radius-label-row">
+                <span class="radius-label">Радиус поиска:</span>
+              </div>
+              <div class="radius-chips-row" id="radius-chips">
+                <button type="button" class="radius-chip" data-radius="0">Только город</button>
+                <button type="button" class="radius-chip" data-radius="50">+50 км</button>
+                <button type="button" class="radius-chip active" data-radius="100">+100 км</button>
+                <button type="button" class="radius-chip" data-radius="200">+200 км</button>
+                <button type="button" class="radius-chip" data-radius="300">+300 км</button>
+                <button type="button" class="radius-chip" data-radius="500">+500 км</button>
+              </div>
+            </div>
+
+            <input type="hidden" id="f-city" value="moskva">
+            <input type="hidden" id="f-lat" value="55.7558">
+            <input type="hidden" id="f-lon" value="37.6173">
+            <input type="hidden" id="f-radius-km" value="100">
+          </div>
+
+          <!-- Cascading Selection: Make -->
+          <div class="form-group cascading-group">
+            <div class="form-label-row">
+              <label class="form-label" for="make-input">Марка автомобиля</label>
+              <span class="form-badge-hint" id="make-status-hint">Выберите или начните ввод</span>
+            </div>
+            
+            <div class="cascading-input-wrapper" id="make-input-wrapper">
+              <input type="text" id="make-input" class="text-input" placeholder="Поиск марки или модели (Toyota, селика, bmw...)" autocomplete="off">
+              <button type="button" id="btn-clear-make" class="input-clear-btn hidden" aria-label="Сбросить марку">✕</button>
+              <span id="make-search-spinner" class="inline-spinner hidden"></span>
+            </div>
+
+            <!-- Selected Make Badge -->
+            <div id="selected-make-badge" class="selected-badge hidden">
+              <div class="badge-content">
+                <span class="badge-icon">🚘</span>
+                <span id="selected-make-name" class="badge-title"></span>
+              </div>
+              <button type="button" id="btn-change-make" class="badge-action-btn">Изменить</button>
+            </div>
+
+            <!-- Make Dropdown -->
+            <div id="make-dropdown" class="cascading-dropdown hidden"></div>
+          </div>
+
+          <!-- Cascading Selection: Model -->
+          <div id="model-selection-group" class="form-group cascading-group hidden">
+            <div class="form-label-row">
+              <label class="form-label" for="model-input">Модель автомобиля</label>
+              <span class="form-badge-hint" id="model-status-hint">Все модели</span>
+            </div>
+
+            <div class="cascading-input-wrapper" id="model-input-wrapper">
+              <input type="text" id="model-input" class="text-input" placeholder="Поиск модели (Camry, RAV4, Celica...)" autocomplete="off">
+              <button type="button" id="btn-clear-model" class="input-clear-btn hidden" aria-label="Сбросить модель">✕</button>
+              <span id="model-search-spinner" class="inline-spinner hidden"></span>
+            </div>
+
+            <!-- Selected Model Badge -->
+            <div id="selected-model-badge" class="selected-badge hidden">
+              <div class="badge-content">
+                <span class="badge-icon">🏷️</span>
+                <span id="selected-model-name" class="badge-title"></span>
+              </div>
+              <button type="button" id="btn-change-model" class="badge-action-btn">Изменить</button>
+            </div>
+
+            <!-- Model Dropdown -->
+            <div id="model-dropdown" class="cascading-dropdown hidden"></div>
+          </div>
+
+          <!-- Price Inputs & Quick Chips -->
+          <div class="form-group">
+            <label class="form-label">Цена (₽)</label>
+            <div class="input-row">
+              <div class="input-col">
+                <input type="number" id="f-price-min" class="text-input" placeholder="От 100 000" min="0" step="10000">
+              </div>
+              <span class="input-sep">—</span>
+              <div class="input-col">
+                <input type="number" id="f-price-max" class="text-input" placeholder="До 500 000" min="0" step="10000">
+              </div>
+            </div>
+            <!-- Quick Chips -->
+            <div class="chips-row">
+              <button type="button" class="preset-chip" data-max-price="500000">до 500 тыс</button>
+              <button type="button" class="preset-chip" data-max-price="800000">до 800 тыс</button>
+              <button type="button" class="preset-chip" data-max-price="1200000">до 1.2 млн</button>
+              <button type="button" class="preset-chip" data-max-price="2000000">до 2 млн</button>
+            </div>
+          </div>
+
+          <!-- Year Range (1980–2026) -->
+          <div class="form-group">
+            <label class="form-label">Год выпуска</label>
+            <div class="input-row">
+              <div class="input-col">
+                <input type="number" id="f-year-min" class="text-input" placeholder="От 1980" min="1980" max="2026">
+              </div>
+              <span class="input-sep">—</span>
+              <div class="input-col">
+                <input type="number" id="f-year-max" class="text-input" placeholder="До 2026" min="1980" max="2026">
+              </div>
+            </div>
+          </div>
+
+          <!-- Mileage Max -->
+          <div class="form-group">
+            <label class="form-label">Максимальный пробег (км)</label>
+            <input type="number" id="f-mileage-max" class="text-input" placeholder="Например: 200 000" min="0" step="5000">
+          </div>
+
+          <!-- Two-level Gearbox Selector -->
+          <div class="form-group">
+            <div class="form-label-row">
+              <label class="form-label">Коробка передач</label>
+              <span class="form-hint" id="gearbox-summary-hint">Любая</span>
+            </div>
+            <!-- Top row: 3 main mode buttons -->
+            <div class="gearbox-modes-row">
+              <button type="button" class="gb-mode-btn active" id="btn-gb-any" data-mode="any">Любая</button>
+              <button type="button" class="gb-mode-btn" id="btn-gb-mt" data-mode="mt">Механика</button>
+              <button type="button" class="gb-mode-btn" id="btn-gb-auto" data-mode="at_all">Автомат (все)</button>
+            </div>
+            <!-- Bottom row: 3 specific automatic chips -->
+            <div class="gearbox-subchips-row" id="gearbox-subchips">
+              <button type="button" class="gb-subchip" data-chip="at">
+                <span class="subchip-dot"></span>
+                <span>АТ (АКПП)</span>
+              </button>
+              <button type="button" class="gb-subchip" data-chip="amt">
+                <span class="subchip-dot"></span>
+                <span>Робот (АМТ)</span>
+              </button>
+              <button type="button" class="gb-subchip" data-chip="cvt">
+                <span class="subchip-dot"></span>
+                <span>Вариатор (CVT)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Engine volumes (optional) -->
+          <div class="form-group">
+            <label class="form-label">Объём двигателя (л, через запятую)</label>
+            <input type="text" id="f-engine-volumes" class="text-input" placeholder="Например: 1.6, 2.0 (необязательно)">
+          </div>
+
+          <!-- Stopwords block in modal -->
+          <div class="form-group">
+            <div class="form-label-row">
+              <label class="form-label">Стоп-слова для поиска</label>
+              <button type="button" id="btn-reset-filter-stopwords" class="text-btn text-danger">Сбросить всё</button>
+            </div>
+            <div class="stopwords-input-row">
+              <input type="text" id="modal-stopword-input" class="text-input" placeholder="Добавить стоп-слово..." maxlength="40">
+              <button type="button" id="btn-add-modal-stopword" class="action-btn">Добавить</button>
+            </div>
+            <div class="stopwords-chips-container" id="modal-stopwords-container">
+              <!-- Chips inserted via app.js -->
+            </div>
+
+            <div class="quick-stopwords-section">
+              <span class="quick-stopwords-title">Быстрое добавление:</span>
+              <div class="quick-stopwords-row" id="quick-stopwords-modal">
+                <!-- Inserted via app.js -->
+              </div>
+            </div>
+            <p class="section-hint" style="margin-top: 6px;">Объявления с этими словами не будут присылаться.</p>
+          </div>
+
+          <!-- Notifications switch in modal -->
+          <div class="form-group switch-group">
+            <div class="switch-info">
+              <span class="switch-title">Уведомления в Telegram</span>
+              <span class="switch-sub">Присылать свежие авто сразу при обнаружении</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="f-notifications-enabled" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Submit Buttons -->
+          <div class="sheet-actions">
+            <button type="button" id="btn-modal-cancel" class="secondary-btn">Отмена</button>
+            <button type="submit" id="btn-modal-save" class="primary-btn">
+              <span id="save-btn-text">Сохранить поиск</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- API Config Modal -->
+    <div id="api-modal" class="modal-overlay hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-sheet small-sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2>Адрес бэкенда API</h2>
+          <button id="btn-api-close" class="close-btn">✕</button>
+        </div>
+        <div class="sheet-body">
+          <p class="section-hint">Укажите адрес бэкенда сервера Car Monitor, если приложение развёрнуто на внешнем хостинге (например, Cloudflare Tunnel, localhost.run или VPS).</p>
+          <div class="form-group">
+            <input type="text" id="api-url-input" class="text-input" placeholder="http://127.0.0.1:8000">
+          </div>
+          <div class="sheet-actions">
+            <button type="button" id="btn-api-reset" class="secondary-btn">По умолчанию</button>
+            <button type="button" id="btn-api-save" class="primary-btn">Применить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
