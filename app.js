@@ -263,6 +263,10 @@
     // Gearbox state
     selectedGearboxes: new Set(), // Set of 'at', 'amt', 'cvt', 'mt'
 
+    // Origin filter state (for 'any_car' mode)
+    originMode: 'exclude', // 'exclude' | 'include'
+    originCountries: new Set(), // Set of 'ru','de','jp','kr','us','fr','cn'
+
     // City & Autocomplete state
     allCities: [],
     citiesMap: {},
@@ -282,25 +286,33 @@
     ]
   };
 
+  const ORIGIN_LABELS = {
+    'ru': '🇷🇺 Русские',
+    'de': '🇩🇪 Немецкие',
+    'jp': '🇯🇵 Японские',
+    'kr': '🇰🇷 Корейские',
+    'us': '🇺🇸 Американские',
+    'fr': '🇫🇷 Французские',
+    'cn': '🇨🇳 Китайские'
+  };
+
   // DOM Elements
   const el = {
     subBadge: document.getElementById('sub-badge'),
-    btnApiSettings: document.getElementById('btn-api-settings'),
     tabBtnFilters: document.getElementById('tab-btn-filters'),
-    tabBtnStopwords: document.getElementById('tab-btn-stopwords'),
+    tabBtnSub: document.getElementById('tab-btn-sub'),
     filtersCounter: document.getElementById('filters-counter'),
-    stopwordsCounter: document.getElementById('stopwords-counter'),
     tabFilters: document.getElementById('tab-filters'),
-    tabStopwords: document.getElementById('tab-stopwords'),
+    tabSub: document.getElementById('tab-sub'),
+    subStatusRole: document.getElementById('sub-status-role'),
+    subStatusExpires: document.getElementById('sub-status-expires'),
+    subStatusSlots: document.getElementById('sub-status-slots'),
+    btnContactAdmin: document.getElementById('btn-contact-admin'),
     btnCreateFilter: document.getElementById('btn-create-filter'),
     filtersLoading: document.getElementById('filters-loading'),
     filtersEmpty: document.getElementById('filters-empty'),
     filtersList: document.getElementById('filters-list'),
-    newStopwordInput: document.getElementById('new-stopword-input'),
-    btnAddStopword: document.getElementById('btn-add-stopword'),
-    stopwordsContainer: document.getElementById('stopwords-container'),
-    btnSaveStopwords: document.getElementById('btn-save-stopwords'),
-    btnResetStopwords: document.getElementById('btn-reset-stopwords'),
+    stopwordsContainer: null,
 
     // Modal Filter Elements
     filterModal: document.getElementById('filter-modal'),
@@ -344,13 +356,30 @@
     modelDropdown: document.getElementById('model-dropdown'),
     modelStatusHint: document.getElementById('model-status-hint'),
 
+    // Origin filter controls
+    originFilterGroup: document.getElementById('origin-filter-group'),
+    originSummaryHint: document.getElementById('origin-summary-hint'),
+    btnOriginExclude: document.getElementById('btn-origin-exclude'),
+    btnOriginInclude: document.getElementById('btn-origin-include'),
+    originChips: document.getElementById('origin-chips'),
+
     // Specs Inputs
     fPriceMin: document.getElementById('f-price-min'),
     fPriceMax: document.getElementById('f-price-max'),
     fYearMin: document.getElementById('f-year-min'),
     fYearMax: document.getElementById('f-year-max'),
+    btnClearYearMin: document.getElementById('btn-clear-year-min'),
+    btnClearYearMax: document.getElementById('btn-clear-year-max'),
     fMileageMax: document.getElementById('f-mileage-max'),
-    fEngineVolumes: document.getElementById('f-engine-volumes'),
+    fHpMin: document.getElementById('f-hp-min'),
+    fHpMax: document.getElementById('f-hp-max'),
+    btnClearHpMin: document.getElementById('btn-clear-hp-min'),
+    btnClearHpMax: document.getElementById('btn-clear-hp-max'),
+    fEngineVolMin: document.getElementById('f-engine-vol-min'),
+    fEngineVolMax: document.getElementById('f-engine-vol-max'),
+    btnClearEngineVolMin: document.getElementById('btn-clear-engine-vol-min'),
+    btnClearEngineVolMax: document.getElementById('btn-clear-engine-vol-max'),
+    fEngineVolumes: null,
     fNotificationsEnabled: document.getElementById('f-notifications-enabled'),
     saveBtnText: document.getElementById('save-btn-text'),
 
@@ -367,7 +396,7 @@
     fRadiusKm: document.getElementById('f-radius-km'),
 
     // Stopwords Quick Hints & Modal Controls
-    quickStopwordsTab: document.getElementById('quick-stopwords-tab'),
+    quickStopwordsTab: null,
     quickStopwordsModal: document.getElementById('quick-stopwords-modal'),
     modalStopwordInput: document.getElementById('modal-stopword-input'),
     btnAddModalStopword: document.getElementById('btn-add-modal-stopword'),
@@ -386,15 +415,13 @@
     adminUsersCounter: document.getElementById('admin-users-counter'),
     tabAdmin: document.getElementById('tab-admin'),
     btnAdminRefresh: document.getElementById('btn-admin-refresh'),
+    btnAdminPauseAll: document.getElementById('btn-admin-pause-all'),
+    btnAdminResumeAll: document.getElementById('btn-admin-resume-all'),
+    btnAdminBulkPlus: document.getElementById('btn-admin-bulk-plus'),
+    btnAdminBulkMinus: document.getElementById('btn-admin-bulk-minus'),
     adminUsersLoading: document.getElementById('admin-users-loading'),
     adminUsersList: document.getElementById('admin-users-list'),
 
-    // API Modal Elements
-    apiModal: document.getElementById('api-modal'),
-    btnApiClose: document.getElementById('btn-api-close'),
-    apiUrlInput: document.getElementById('api-url-input'),
-    btnApiSave: document.getElementById('btn-api-save'),
-    btnApiReset: document.getElementById('btn-api-reset'),
     toast: document.getElementById('toast')
   };
 
@@ -615,20 +642,110 @@
       el.subBadge.classList.add('expired');
     }
 
-    if (isAdmin && el.tabBtnAdmin) {
+    if (Boolean(state.user?.is_admin || state.user?.role === 'admin') === true && el.tabBtnAdmin) {
       el.tabBtnAdmin.classList.remove('hidden');
     } else if (el.tabBtnAdmin) {
       el.tabBtnAdmin.classList.add('hidden');
     }
 
-    el.filtersCounter.textContent = state.filters.length;
-    el.stopwordsCounter.textContent = state.stopwords.length;
+    if (el.filtersCounter) el.filtersCounter.textContent = state.filters.length;
+    if (el.stopwordsCounter) el.stopwordsCounter.textContent = state.stopwords.length;
+    renderSubscriptionTab();
   }
 
-  // Format Helper: numbers with space delimiter
+  // Render Subscription Tab
+  function renderSubscriptionTab() {
+    if (!state.user || !el.subStatusRole) return;
+    const role = state.user.role || 'trial';
+    const isAdmin = Boolean(state.user?.is_admin || role === 'admin');
+    const activeCount = state.user.active_filters_count ?? state.filters.filter(f => f.notifications_enabled).length;
+    const limit = state.user.filter_limit ?? 1;
+    const limitDisplay = (limit === null || limit === 999999 || isAdmin) ? '∞' : limit;
+
+    el.subStatusRole.className = 'badge-pill';
+    let expiresLabel = '—';
+
+    if (isAdmin) {
+      el.subStatusRole.textContent = '👑 Администратор';
+      el.subStatusRole.classList.add('active');
+      expiresLabel = 'Бессрочно';
+    } else if (role === 'vip') {
+      el.subStatusRole.textContent = '⭐ VIP';
+      el.subStatusRole.classList.add('active');
+      const expStr = state.user.expires_at || state.user.sub_until;
+      if (expStr) {
+        try {
+          const d = new Date(expStr);
+          if (d.getFullYear() > 2090) {
+            expiresLabel = 'Бессрочно';
+          } else {
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mi = String(d.getMinutes()).padStart(2, '0');
+            expiresLabel = `до ${dd}.${mm}.${d.getFullYear()} ${hh}:${mi}`;
+          }
+        } catch (e) {
+          expiresLabel = expStr;
+        }
+      } else {
+        expiresLabel = 'Бессрочно';
+      }
+    } else if (role === 'trial') {
+      el.subStatusRole.textContent = '🎁 Пробный';
+      el.subStatusRole.classList.add('trial');
+      const expStr = state.user.expires_at || state.user.sub_until;
+      if (expStr) {
+        try {
+          const d = new Date(expStr);
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mi = String(d.getMinutes()).padStart(2, '0');
+          expiresLabel = `до ${dd}.${mm}.${d.getFullYear()} ${hh}:${mi}`;
+        } catch (e) {
+          expiresLabel = expStr;
+        }
+      } else {
+        expiresLabel = '24 часа';
+      }
+    } else {
+      el.subStatusRole.textContent = '🔒 Истёк';
+      el.subStatusRole.classList.add('expired');
+      expiresLabel = 'Доступ приостановлен';
+    }
+
+    if (el.subStatusExpires) el.subStatusExpires.textContent = expiresLabel;
+    if (el.subStatusSlots) el.subStatusSlots.textContent = `${activeCount} из ${limitDisplay}`;
+  }
+
+  // Format Helpers: dots delimiter (123.456) and clean parsers
+  function formatWithDots(val) {
+    if (val === null || val === undefined) return '';
+    const digits = String(val).replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function parseCleanInt(val) {
+    if (val === null || val === undefined) return null;
+    const digits = String(val).replace(/[\s.\u00a0]/g, '').replace(/\D/g, '');
+    if (!digits) return null;
+    const n = parseInt(digits, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function parseCleanFloat(val) {
+    if (val === null || val === undefined) return null;
+    const cleaned = String(val).trim().replace(/,/g, '.').replace(/[^\d.]/g, '');
+    if (!cleaned) return null;
+    const f = parseFloat(cleaned);
+    return Number.isFinite(f) ? f : null;
+  }
+
   function formatNum(n) {
     if (n === null || n === undefined || n === '') return '';
-    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return formatWithDots(n);
   }
 
   // 5. Render Filters List
@@ -705,9 +822,37 @@
           specs.push(`<span class="spec-chip"><span class="spec-icon">⚙️</span> ${escapeHtml(gbLabel)}</span>`);
         }
 
-        // Engine volumes
-        if (filter.engine_volumes) {
+        // Horsepower
+        const hpMin = filter.hp_min;
+        const hpMax = filter.hp_max;
+        if (hpMin && hpMax) {
+          specs.push(`<span class="spec-chip"><span class="spec-icon">🐎</span> ${hpMin}–${hpMax} л.с.</span>`);
+        } else if (hpMin) {
+          specs.push(`<span class="spec-chip"><span class="spec-icon">🐎</span> от ${hpMin} л.с.</span>`);
+        } else if (hpMax) {
+          specs.push(`<span class="spec-chip"><span class="spec-icon">🐎</span> до ${hpMax} л.с.</span>`);
+        }
+
+        // Engine volume range (or legacy engine_volumes)
+        const evMin = filter.engine_vol_min;
+        const evMax = filter.engine_vol_max;
+        if (evMin && evMax) {
+          specs.push(`<span class="spec-chip"><span class="spec-icon">⛽</span> ${evMin}–${evMax} л</span>`);
+        } else if (evMin) {
+          specs.push(`<span class="spec-chip"><span class="spec-icon">⛽</span> от ${evMin} л</span>`);
+        } else if (evMax) {
+          specs.push(`<span class="spec-chip"><span class="spec-icon">⛽</span> до ${evMax} л</span>`);
+        } else if (filter.engine_volumes) {
           specs.push(`<span class="spec-chip"><span class="spec-icon">⛽</span> ${escapeHtml(String(filter.engine_volumes))} л</span>`);
+        }
+
+        // Origin countries filter
+        const origMode = (filter.origin_mode || 'any').toLowerCase();
+        const origList = (filter.origin_countries || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if ((origMode === 'include' || origMode === 'exclude') && origList.length > 0) {
+          const modePrefix = origMode === 'include' ? 'Только' : 'Кроме';
+          const names = origList.map(c => ORIGIN_LABELS[c] || c.toUpperCase()).join(', ');
+          specs.push(`<span class="spec-chip"><span class="spec-icon">🌍</span> ${modePrefix}: ${escapeHtml(names)}</span>`);
         }
 
         // Location
@@ -872,7 +1017,8 @@
 
   // 6. Stopwords Screen Logic
   function renderStopwords() {
-    el.stopwordsCounter.textContent = state.stopwords.length;
+    if (el.stopwordsCounter) el.stopwordsCounter.textContent = state.stopwords.length;
+    if (!el.stopwordsContainer) return;
     el.stopwordsContainer.innerHTML = '';
 
     if (!state.stopwords || state.stopwords.length === 0) {
@@ -1057,6 +1203,60 @@
     showToast('Стоп-слова для поиска сброшены', 'info');
   }
 
+  // Helpers for Clear Buttons, Years & Origin Filter
+  function syncClearBtn(inputEl, btnEl) {
+    if (!inputEl || !btnEl) return;
+    btnEl.classList.toggle('hidden', String(inputEl.value || '').length === 0);
+  }
+
+  function syncAllModalClearButtons() {
+    syncClearBtn(el.cityInput, el.btnClearCity);
+    syncClearBtn(el.makeInput, el.btnClearMake);
+    syncClearBtn(el.modelInput, el.btnClearModel);
+    syncClearBtn(el.fYearMin, el.btnClearYearMin);
+    syncClearBtn(el.fYearMax, el.btnClearYearMax);
+    syncClearBtn(el.fHpMin, el.btnClearHpMin);
+    syncClearBtn(el.fHpMax, el.btnClearHpMax);
+    syncClearBtn(el.fEngineVolMin, el.btnClearEngineVolMin);
+    syncClearBtn(el.fEngineVolMax, el.btnClearEngineVolMax);
+  }
+
+  function clearYearInputs() {
+    if (el.fYearMin) el.fYearMin.value = '';
+    if (el.fYearMax) el.fYearMax.value = '';
+    syncClearBtn(el.fYearMin, el.btnClearYearMin);
+    syncClearBtn(el.fYearMax, el.btnClearYearMax);
+  }
+
+  function renderOriginFilterUI() {
+    if (el.btnOriginExclude) el.btnOriginExclude.classList.toggle('active', state.originMode === 'exclude');
+    if (el.btnOriginInclude) el.btnOriginInclude.classList.toggle('active', state.originMode === 'include');
+    if (el.originChips) {
+      el.originChips.querySelectorAll('.origin-chip').forEach(chip => {
+        chip.classList.toggle('active', state.originCountries.has(chip.dataset.country));
+      });
+    }
+    if (el.originSummaryHint) {
+      if (state.originCountries.size === 0) {
+        el.originSummaryHint.textContent = 'Любой';
+      } else {
+        const prefix = state.originMode === 'include' ? 'Только' : 'Кроме';
+        el.originSummaryHint.textContent = `${prefix}: ${state.originCountries.size}`;
+      }
+    }
+  }
+
+  function resetOriginFilter() {
+    state.originMode = 'exclude';
+    state.originCountries = new Set();
+    renderOriginFilterUI();
+  }
+
+  function setOriginMode(mode) {
+    state.originMode = (mode === 'include') ? 'include' : 'exclude';
+    renderOriginFilterUI();
+  }
+
   // 7. Cascading Make & Model Selection Logic
   function openCreateFilterModal() {
     triggerHaptic('light');
@@ -1066,6 +1266,8 @@
 
     el.filterForm.reset();
     resetCarSelection();
+    resetOriginFilter();
+    clearYearInputs();
 
     // Default location: Москва +100 км
     selectCity({ name: 'Москва', slug: 'moskva', lat: 55.7558, lon: 37.6173 });
@@ -1074,12 +1276,13 @@
     setRadiusKm(100);
     if (el.radiusSelectorGroup) el.radiusSelectorGroup.classList.remove('hidden');
 
-    // Modal stopwords: initialize from current user stopwords
-    state.modalStopwords = [...state.stopwords];
+    // Modal stopwords: initialize from current user stopwords or defaultStopwords
+    state.modalStopwords = state.stopwords.length ? [...state.stopwords] : [...state.defaultStopwords];
     renderModalStopwords();
 
     setGearboxMode('any');
     el.fNotificationsEnabled.checked = true;
+    syncAllModalClearButtons();
 
     openModal();
     // Pre-load makes and cities if not loaded
@@ -1115,6 +1318,8 @@
     el.selectedModelBadge.classList.add('hidden');
     el.btnClearModel.classList.add('hidden');
 
+    if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');
+
     el.makeStatusHint.textContent = 'Выберите или начните ввод';
     el.modelStatusHint.textContent = 'Все модели';
 
@@ -1122,13 +1327,17 @@
   }
 
   function closeDropdowns() {
-    el.makeDropdown.classList.add('hidden');
-    el.makeDropdown.innerHTML = '';
-    el.modelDropdown.classList.add('hidden');
-    el.modelDropdown.innerHTML = '';
+    if (el.makeDropdown) {
+      el.makeDropdown.classList.add('hidden');
+      el.makeDropdown.innerHTML = '';
+    }
+    if (el.modelDropdown) {
+      el.modelDropdown.classList.add('hidden');
+      el.modelDropdown.innerHTML = '';
+    }
   }
 
-  function selectAnyCar() {
+  function selectAnyCar(preserveExistingYears = false) {
     triggerHaptic('light');
     state.isAnyCar = true;
     state.selectedMake = null;
@@ -1144,16 +1353,21 @@
     el.fAutoruModel.value = '';
     el.fAvitoQuery.value = '';
 
+    if (!preserveExistingYears) {
+      clearYearInputs();
+    }
+
     el.selectedMakeName.textContent = '✨ Любое авто (по параметрам)';
     el.selectedMakeBadge.classList.remove('hidden');
     el.makeInputWrapper.classList.add('hidden');
     el.makeStatusHint.textContent = 'Поиск по параметрам';
 
     el.modelSelectionGroup.classList.add('hidden');
+    if (el.originFilterGroup) el.originFilterGroup.classList.remove('hidden');
     closeDropdowns();
   }
 
-  function selectMake(makeObj) {
+  function selectMake(makeObj, preserveExistingYears = false) {
     triggerHaptic('light');
     state.isAnyCar = false;
     state.selectedMake = makeObj;
@@ -1166,6 +1380,11 @@
     el.fDromMake.value = makeObj.drom_slug || makeObj.id;
     el.fAutoruMake.value = makeObj.autoru_slug || makeObj.id;
     el.fAvitoQuery.value = makeObj.name;
+
+    if (!preserveExistingYears) {
+      clearYearInputs();
+    }
+    if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');
 
     // Show Make Badge
     el.selectedMakeName.textContent = makeObj.name;
@@ -1200,7 +1419,7 @@
     }
   }
 
-  function selectMakeOnly() {
+  function selectMakeOnly(preserveExistingYears = false) {
     triggerHaptic('light');
     if (!state.selectedMake) return;
 
@@ -1212,6 +1431,10 @@
     el.fAutoruModel.value = '';
     el.fAvitoQuery.value = state.selectedMake.name;
 
+    if (!preserveExistingYears) {
+      clearYearInputs();
+    }
+
     el.selectedModelName.textContent = `🌐 Все модели ${state.selectedMake.name}`;
     el.selectedModelBadge.classList.remove('hidden');
     el.modelInputWrapper.classList.add('hidden');
@@ -1220,7 +1443,7 @@
     closeDropdowns();
   }
 
-  function selectModel(modelObj) {
+  function selectModel(modelObj, preserveExistingYears = false) {
     triggerHaptic('light');
     if (!state.selectedMake) return;
 
@@ -1232,10 +1455,17 @@
     el.fAutoruModel.value = modelObj.autoru_model || modelObj.model || modelObj.id;
     el.fAvitoQuery.value = modelObj.avito_query || `${state.selectedMake.name} ${modelObj.name}`;
 
-    // Auto-fill typical years if empty
-    if (modelObj.years && Array.isArray(modelObj.years) && modelObj.years.length === 2) {
-      if (!el.fYearMin.value) el.fYearMin.value = modelObj.years[0];
-      if (!el.fYearMax.value) el.fYearMax.value = modelObj.years[1];
+    // Overwrite or clear years when user selects a model/generation
+    if (!preserveExistingYears) {
+      if (modelObj.years && Array.isArray(modelObj.years) && modelObj.years.length === 2) {
+        el.fYearMin.value = modelObj.years[0] || '';
+        el.fYearMax.value = modelObj.years[1] || '';
+      } else {
+        el.fYearMin.value = '';
+        el.fYearMax.value = '';
+      }
+      syncClearBtn(el.fYearMin, el.btnClearYearMin);
+      syncClearBtn(el.fYearMax, el.btnClearYearMax);
     }
 
     el.selectedModelName.textContent = modelObj.name;
@@ -1247,9 +1477,10 @@
   }
 
   // Cross-search selection (1-click make + model)
-  function selectCrossResult(item) {
+  function selectCrossResult(item, preserveExistingYears = false) {
     triggerHaptic('success');
     state.isAnyCar = false;
+    if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');
 
     // Find make in catalog or synthesize makeObj
     let makeObj = state.catalogMakes.find(m => m.id === item.make);
@@ -1286,9 +1517,18 @@
     el.fAutoruModel.value = item.autoru_model || item.model;
     el.fAvitoQuery.value = item.avito_query || item.display;
 
-    // Years pre-fill
-    if (item.year_from && !el.fYearMin.value) el.fYearMin.value = item.year_from;
-    if (item.year_to && !el.fYearMax.value) el.fYearMax.value = item.year_to;
+    // Overwrite or clear years when user selects a cross-search result
+    if (!preserveExistingYears) {
+      if (item.year_from || item.year_to) {
+        el.fYearMin.value = item.year_from || '';
+        el.fYearMax.value = item.year_to || '';
+      } else {
+        el.fYearMin.value = '';
+        el.fYearMax.value = '';
+      }
+      syncClearBtn(el.fYearMin, el.btnClearYearMin);
+      syncClearBtn(el.fYearMax, el.btnClearYearMax);
+    }
 
     // Update Make UI
     el.selectedMakeName.textContent = makeObj.name;
@@ -1628,6 +1868,7 @@
     if (el.cityDropdown) el.cityDropdown.classList.add('hidden');
     if (el.cityErrorHint) el.cityErrorHint.classList.add('hidden');
     if (el.cityStatusHint) el.cityStatusHint.textContent = 'Город выбран';
+    syncClearBtn(el.cityInput, el.btnClearCity);
   }
 
   function renderCityDropdown(query = '') {
@@ -1693,18 +1934,37 @@
     el.cityDropdown.classList.remove('hidden');
   }
 
+  // Universal clear button binder preventing input blur from swallowing taps
+  function bindClearButton(btnEl, onClear) {
+    if (!btnEl) return;
+    const stopAndRun = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerHaptic('light');
+      onClear();
+    };
+    btnEl.addEventListener('mousedown', stopAndRun);
+    btnEl.addEventListener('touchstart', stopAndRun, { passive: false });
+    btnEl.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
   function setupCityAutocomplete() {
     if (!el.cityInput) return;
 
     el.cityInput.addEventListener('input', () => {
       state.isCitySelected = false;
       const q = el.cityInput.value.trim();
+      syncClearBtn(el.cityInput, el.btnClearCity);
       if (el.cityStatusHint) el.cityStatusHint.textContent = 'Выберите из списка';
       if (el.cityErrorHint) el.cityErrorHint.classList.add('hidden');
       renderCityDropdown(q);
     });
 
     el.cityInput.addEventListener('focus', () => {
+      syncClearBtn(el.cityInput, el.btnClearCity);
       renderCityDropdown(el.cityInput.value.trim());
     });
 
@@ -1720,13 +1980,15 @@
       }, 150);
     });
 
-    if (el.btnClearCity) {
-      el.btnClearCity.addEventListener('click', () => {
-        triggerHaptic('light');
-        selectCity({ name: 'Москва', slug: 'moskva', lat: 55.7558, lon: 37.6173 });
-        if (el.cityInput) el.cityInput.value = 'Москва';
-      });
-    }
+    bindClearButton(el.btnClearCity, () => {
+      el.cityInput.value = '';
+      if (el.fCity) el.fCity.value = '';
+      state.isCitySelected = false;
+      if (el.btnClearCity) el.btnClearCity.classList.add('hidden');
+      if (el.cityStatusHint) el.cityStatusHint.textContent = 'Выберите из списка';
+      el.cityInput.focus();
+      renderCityDropdown('');
+    });
 
     // Radius chips listener
     document.querySelectorAll('.radius-chip').forEach(chip => {
@@ -1738,7 +2000,8 @@
     });
 
     document.addEventListener('click', (e) => {
-      if (el.cityDropdown && !el.cityDropdown.contains(e.target) && e.target !== el.cityInput) {
+      const cityGroup = el.cityInput.closest('.cascading-group');
+      if (el.cityDropdown && cityGroup && !cityGroup.contains(e.target)) {
         el.cityDropdown.classList.add('hidden');
       }
     });
@@ -1755,15 +2018,27 @@
 
     el.filterForm.reset();
     resetCarSelection();
+    resetOriginFilter();
 
-    // Inputs
-    el.fPriceMin.value = f.price_min || '';
-    el.fPriceMax.value = f.price_max || '';
-    el.fYearMin.value = f.year_min || '';
-    el.fYearMax.value = f.year_max || '';
-    el.fMileageMax.value = f.mileage_max || '';
-    el.fEngineVolumes.value = f.engine_volumes || '';
+    // Inputs formatted with dots where numeric money/mileage
+    if (el.fPriceMin) el.fPriceMin.value = f.price_min ? formatWithDots(f.price_min) : '';
+    if (el.fPriceMax) el.fPriceMax.value = f.price_max ? formatWithDots(f.price_max) : '';
+    if (el.fYearMin) el.fYearMin.value = f.year_min || '';
+    if (el.fYearMax) el.fYearMax.value = f.year_max || '';
+    if (el.fMileageMax) el.fMileageMax.value = f.mileage_max ? formatWithDots(f.mileage_max) : '';
+    if (el.fHpMin) el.fHpMin.value = f.hp_min || '';
+    if (el.fHpMax) el.fHpMax.value = f.hp_max || '';
+    if (el.fEngineVolMin) el.fEngineVolMin.value = (f.engine_vol_min !== null && f.engine_vol_min !== undefined) ? f.engine_vol_min : '';
+    if (el.fEngineVolMax) el.fEngineVolMax.value = (f.engine_vol_max !== null && f.engine_vol_max !== undefined) ? f.engine_vol_max : '';
+    if (el.fEngineVolumes) el.fEngineVolumes.value = f.engine_volumes || '';
     el.fNotificationsEnabled.checked = Boolean(f.notifications_enabled);
+
+    // Restore origin filter
+    const savedOriginMode = (f.origin_mode || 'any').toLowerCase();
+    state.originMode = (savedOriginMode === 'include') ? 'include' : 'exclude';
+    const savedCountries = (f.origin_countries || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    state.originCountries = new Set(savedCountries);
+    renderOriginFilterUI();
 
     // City Selection
     const citySlug = f.city || 'moskva';
@@ -1791,9 +2066,9 @@
     state.modalStopwords = [...state.stopwords];
     renderModalStopwords();
 
-    // Car selection state with pretty names from catalog
+    // Car selection state with pretty names from catalog (preserveExistingYears = true!)
     if (f.search_mode === 'any_car') {
-      selectAnyCar();
+      selectAnyCar(true);
     } else if (f.search_mode === 'make_only') {
       const catMake = (state.catalogMakes || []).find(m =>
         m.id.toLowerCase() === (f.make || '').toLowerCase() ||
@@ -1814,8 +2089,8 @@
         avito_slug: f.make
       };
       makeObj.name = prettyMakeName;
-      selectMake(makeObj);
-      selectMakeOnly();
+      selectMake(makeObj, true);
+      selectMakeOnly(true);
     } else {
       // exact mode
       const catMake = (state.catalogMakes || []).find(m =>
@@ -1844,7 +2119,7 @@
         avito_slug: f.make
       };
       makeObj.name = prettyMakeName;
-      selectMake(makeObj);
+      selectMake(makeObj, true);
 
       const modelObj = {
         id: f.model,
@@ -1855,11 +2130,16 @@
         autoru_model: f.autoru_model || f.model,
         avito_query: f.avito_query || f.display_name || `${prettyMakeName} ${prettyModelName}`.trim()
       };
-      selectModel(modelObj);
+      selectModel(modelObj, true);
     }
+
+    // Ensure saved years are preserved verbatim
+    if (el.fYearMin) el.fYearMin.value = f.year_min || '';
+    if (el.fYearMax) el.fYearMax.value = f.year_max || '';
 
     // Set Gearbox
     setGearboxFromValue(f.gearbox);
+    syncAllModalClearButtons();
 
     openModal();
   }
@@ -1873,6 +2153,7 @@
     el.filterModal.classList.add('hidden');
     document.body.style.overflow = '';
     closeDropdowns();
+    if (el.cityDropdown) el.cityDropdown.classList.add('hidden');
   }
 
   // 11. Filter Submit Handler (POST / PUT)
@@ -1896,17 +2177,17 @@
       displayName = 'Любое авто';
     }
 
-    const parseNum = (val) => {
-      if (!val) return null;
-      const n = parseInt(val, 10);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    const yearMin = parseNum(el.fYearMin.value);
-    const yearMax = parseNum(el.fYearMax.value);
-    const priceMin = parseNum(el.fPriceMin.value);
-    const priceMax = parseNum(el.fPriceMax.value);
-    const mileageMax = parseNum(el.fMileageMax.value);
+    const yearMin = parseCleanInt(el.fYearMin ? el.fYearMin.value : '');
+    const yearMax = parseCleanInt(el.fYearMax ? el.fYearMax.value : '');
+    const priceMin = parseCleanInt(el.fPriceMin ? el.fPriceMin.value : '');
+    const priceMax = parseCleanInt(el.fPriceMax ? el.fPriceMax.value : '');
+    const mileageMax = parseCleanInt(el.fMileageMax ? el.fMileageMax.value : '');
+    const hpMin = parseCleanInt(el.fHpMin ? el.fHpMin.value : '');
+    const hpMax = parseCleanInt(el.fHpMax ? el.fHpMax.value : '');
+    const engineVolMin = parseCleanFloat(el.fEngineVolMin ? el.fEngineVolMin.value : '');
+    const engineVolMax = parseCleanFloat(el.fEngineVolMax ? el.fEngineVolMax.value : '');
+    const originCountriesStr = (mode === 'any_car') ? Array.from(state.originCountries).join(',') : '';
+    const originModeVal = (mode === 'any_car' && originCountriesStr) ? state.originMode : 'any';
 
     // Validation rules
     if (mode === 'exact') {
@@ -1931,8 +2212,15 @@
         return;
       }
     } else if (mode === 'any_car') {
-      if (priceMin === null && priceMax === null && yearMin === null && yearMax === null && mileageMax === null) {
-        showToast('Для поиска любого авто укажите хотя бы одно ограничение (цену, год или пробег)', 'error');
+      if (
+        priceMin === null && priceMax === null &&
+        yearMin === null && yearMax === null &&
+        mileageMax === null &&
+        hpMin === null && hpMax === null &&
+        engineVolMin === null && engineVolMax === null &&
+        !originCountriesStr
+      ) {
+        showToast('Для поиска любого авто укажите хотя бы одно ограничение (цену, год, пробег, мощность, объём или автопром)', 'error');
         triggerHaptic('error');
         return;
       }
@@ -1945,15 +2233,16 @@
       return;
     }
 
-    if (yearMin !== null && (yearMin < 1980 || yearMin > 2026)) {
-      showToast('Год должен быть в диапазоне от 1980 до 2026', 'error');
+    const maxAllowedYear = new Date().getFullYear() + 1;
+    if (yearMin !== null && (yearMin < 1980 || yearMin > maxAllowedYear)) {
+      showToast(`Год должен быть в диапазоне от 1980 до ${maxAllowedYear}`, 'error');
       el.fYearMin.focus();
       triggerHaptic('error');
       return;
     }
 
-    if (yearMax !== null && (yearMax < 1980 || yearMax > 2026)) {
-      showToast('Год должен быть в диапазоне от 1980 до 2026', 'error');
+    if (yearMax !== null && (yearMax < 1980 || yearMax > maxAllowedYear)) {
+      showToast(`Год должен быть в диапазоне от 1980 до ${maxAllowedYear}`, 'error');
       el.fYearMax.focus();
       triggerHaptic('error');
       return;
@@ -1962,6 +2251,20 @@
     if (yearMin !== null && yearMax !== null && yearMin > yearMax) {
       showToast('Минимальное значение не может быть больше максимального', 'error');
       el.fYearMin.focus();
+      triggerHaptic('error');
+      return;
+    }
+
+    if (hpMin !== null && hpMax !== null && hpMin > hpMax) {
+      showToast('Минимальная мощность не может быть больше максимальной', 'error');
+      if (el.fHpMin) el.fHpMin.focus();
+      triggerHaptic('error');
+      return;
+    }
+
+    if (engineVolMin !== null && engineVolMax !== null && engineVolMin > engineVolMax) {
+      showToast('Минимальный объём двигателя не может быть больше максимального', 'error');
+      if (el.fEngineVolMin) el.fEngineVolMin.focus();
       triggerHaptic('error');
       return;
     }
@@ -2001,7 +2304,13 @@
       price_max: priceMax,
       mileage_max: mileageMax,
       gearbox: gearbox,
-      engine_volumes: el.fEngineVolumes.value.trim(),
+      engine_volumes: el.fEngineVolumes ? el.fEngineVolumes.value.trim() : '',
+      hp_min: hpMin,
+      hp_max: hpMax,
+      engine_vol_min: engineVolMin,
+      engine_vol_max: engineVolMax,
+      origin_mode: originModeVal,
+      origin_countries: originCountriesStr,
       city: el.fCity.value || 'moskva',
       lat: parseFloat(el.fLat.value) || 55.7558,
       lon: parseFloat(el.fLon.value) || 37.6173,
@@ -2139,13 +2448,17 @@
         </div>
 
         <div class="admin-user-actions">
-          <button class="btn-act" data-act="vip" data-uid="${u.chat_id || u.user_id}" data-days="7">⭐ +7д</button>
-          <button class="btn-act" data-act="vip" data-uid="${u.chat_id || u.user_id}" data-days="30">⭐ +30д</button>
+          <button class="btn-act" data-act="adjust_sub" data-uid="${u.chat_id || u.user_id}" data-role="trial" data-days="1">🎁 +1д Триал</button>
+          <button class="btn-act" data-act="adjust_sub" data-uid="${u.chat_id || u.user_id}" data-role="trial" data-days="-1">🎁 -1д Триал</button>
+          <button class="btn-act" data-act="adjust_sub" data-uid="${u.chat_id || u.user_id}" data-role="vip" data-days="1">⭐ +1д VIP</button>
+          <button class="btn-act" data-act="adjust_sub" data-uid="${u.chat_id || u.user_id}" data-role="vip" data-days="-1">⭐ -1д VIP</button>
+          <button class="btn-act" data-act="vip" data-uid="${u.chat_id || u.user_id}" data-days="7">⭐ +7д VIP</button>
+          <button class="btn-act" data-act="vip" data-uid="${u.chat_id || u.user_id}" data-days="30">⭐ +30д VIP</button>
           <button class="btn-act" data-act="vip" data-uid="${u.chat_id || u.user_id}" data-days="0">👑 Навсегда</button>
-          <button class="btn-act" data-act="limit" data-uid="${u.chat_id || u.user_id}" data-val="5">📈 5 слотов</button>
-          ${((u.effective_limit ?? 0) < 999999) ? `<button class="btn-act" data-act="limit" data-uid="${u.chat_id || u.user_id}" data-val="${(u.effective_limit ?? 0) + 1}">➕ +1 слот</button>` : ''}
+          <button class="btn-act" data-act="adjust_limit" data-uid="${u.chat_id || u.user_id}" data-delta="1">➕ +1 слот</button>
+          <button class="btn-act" data-act="adjust_limit" data-uid="${u.chat_id || u.user_id}" data-delta="-1">➖ -1 слот</button>
           <button class="btn-act" data-act="limit" data-uid="${u.chat_id || u.user_id}" data-val="">🔄 Сброс лимита</button>
-          <button class="btn-act btn-act-danger" data-act="revoke" data-uid="${u.chat_id || u.user_id}">❌ Убрать VIP (Обнулить)</button>
+          <button class="btn-act btn-act-danger" data-act="revoke" data-uid="${u.chat_id || u.user_id}">❌ Обнулить</button>
         </div>
       `;
 
@@ -2160,7 +2473,22 @@
         const uid = btn.dataset.uid;
         try {
           btn.disabled = true;
-          if (act === 'vip') {
+          if (act === 'adjust_sub') {
+            const role = btn.dataset.role || 'vip';
+            const days = parseInt(btn.dataset.days, 10);
+            await apiFetch(`/api/admin/users/${uid}/adjust_sub`, {
+              method: 'POST',
+              body: JSON.stringify({ role, days })
+            });
+            showToast(`Подписка (${role.toUpperCase()} ${days > 0 ? '+' : ''}${days}д) обновлена для ${uid}`, 'success');
+          } else if (act === 'adjust_limit') {
+            const delta = parseInt(btn.dataset.delta, 10);
+            await apiFetch(`/api/admin/users/${uid}/adjust_limit`, {
+              method: 'POST',
+              body: JSON.stringify({ delta })
+            });
+            showToast(`Лимит слотов (${delta > 0 ? '+' : ''}${delta}) обновлён для ${uid}`, 'success');
+          } else if (act === 'vip') {
             const days = parseInt(btn.dataset.days, 10);
             await apiFetch(`/api/admin/users/${uid}/vip`, {
               method: 'POST',
@@ -2178,7 +2506,7 @@
             await apiFetch(`/api/admin/users/${uid}/revoke`, {
               method: 'POST'
             });
-            showToast(`VIP сброшен и поиски отключены для ${uid}`, 'info');
+            showToast(`Доступ обнулён и поиски отключены для ${uid}`, 'info');
           }
           await loadAdminUsers();
         } catch (err) {
@@ -2195,15 +2523,19 @@
     triggerHaptic('light');
     state.activeTab = tabName;
 
-    el.tabBtnFilters.classList.toggle('active', tabName === 'filters');
-    el.tabBtnStopwords.classList.toggle('active', tabName === 'stopwords');
+    if (el.tabBtnFilters) el.tabBtnFilters.classList.toggle('active', tabName === 'filters');
+    if (el.tabBtnSub) el.tabBtnSub.classList.toggle('active', tabName === 'sub');
+    if (el.tabBtnStopwords) el.tabBtnStopwords.classList.toggle('active', tabName === 'stopwords');
     if (el.tabBtnAdmin) el.tabBtnAdmin.classList.toggle('active', tabName === 'admin');
 
-    el.tabFilters.classList.toggle('hidden', tabName !== 'filters');
-    el.tabStopwords.classList.toggle('hidden', tabName !== 'stopwords');
+    if (el.tabFilters) el.tabFilters.classList.toggle('hidden', tabName !== 'filters');
+    if (el.tabSub) el.tabSub.classList.toggle('hidden', tabName !== 'sub');
+    if (el.tabStopwords) el.tabStopwords.classList.toggle('hidden', tabName !== 'stopwords');
     if (el.tabAdmin) el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');
 
-    if (tabName === 'admin') {
+    if (tabName === 'sub') {
+      renderSubscriptionTab();
+    } else if (tabName === 'admin') {
       loadAdminUsers();
     }
   }
@@ -2211,15 +2543,91 @@
   // 14. Event Listeners Setup
   function initEvents() {
     // Navigation Tabs
-    el.tabBtnFilters.addEventListener('click', () => switchTab('filters'));
-    el.tabBtnStopwords.addEventListener('click', () => switchTab('stopwords'));
+    if (el.tabBtnFilters) el.tabBtnFilters.addEventListener('click', () => switchTab('filters'));
+    if (el.tabBtnSub) el.tabBtnSub.addEventListener('click', () => switchTab('sub'));
+    if (el.tabBtnStopwords) el.tabBtnStopwords.addEventListener('click', () => switchTab('stopwords'));
     if (el.tabBtnAdmin) {
       el.tabBtnAdmin.addEventListener('click', () => switchTab('admin'));
     }
+
+    // Subscription Tab: Contact Admin Button
+    if (el.btnContactAdmin) {
+      el.btnContactAdmin.addEventListener('click', () => {
+        triggerHaptic('light');
+        const adminUrl = 'tg://user?id=1068377358';
+        try {
+          if (tg && typeof tg.openTelegramLink === 'function') {
+            window.open(adminUrl, '_blank');
+          } else {
+            window.open(adminUrl, '_blank');
+          }
+        } catch (e) {
+          window.location.href = adminUrl;
+        }
+      });
+    }
+
+    // Admin Tab Refresh & Bulk Actions
     if (el.btnAdminRefresh) {
       el.btnAdminRefresh.addEventListener('click', () => {
         triggerHaptic('light');
         loadAdminUsers();
+      });
+    }
+    if (el.btnAdminPauseAll) {
+      el.btnAdminPauseAll.addEventListener('click', async () => {
+        triggerHaptic('warning');
+        const ok = await showConfirmDialog('Отключить активные фильтры всем пользователям (кроме админа)?');
+        if (!ok) return;
+        try {
+          const res = await apiFetch('/api/admin/filters/pause_all', { method: 'POST' });
+          showToast(`Поставлено на паузу фильтров: ${res?.paused_count ?? 0}`, 'info');
+          await loadAdminUsers();
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+        }
+      });
+    }
+    if (el.btnAdminResumeAll) {
+      el.btnAdminResumeAll.addEventListener('click', async () => {
+        triggerHaptic('success');
+        try {
+          const res = await apiFetch('/api/admin/filters/resume_all', { method: 'POST' });
+          showToast(`Включено обратно фильтров: ${res?.resumed_count ?? 0}`, 'success');
+          await loadAdminUsers();
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+        }
+      });
+    }
+    if (el.btnAdminBulkPlus) {
+      el.btnAdminBulkPlus.addEventListener('click', async () => {
+        triggerHaptic('medium');
+        try {
+          const res = await apiFetch('/api/admin/users/bulk_limit', {
+            method: 'POST',
+            body: JSON.stringify({ delta: 1 })
+          });
+          showToast(`+1 слот добавлен (${res?.updated_count ?? 0} польз.)`, 'success');
+          await loadAdminUsers();
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+        }
+      });
+    }
+    if (el.btnAdminBulkMinus) {
+      el.btnAdminBulkMinus.addEventListener('click', async () => {
+        triggerHaptic('medium');
+        try {
+          const res = await apiFetch('/api/admin/users/bulk_limit', {
+            method: 'POST',
+            body: JSON.stringify({ delta: -1 })
+          });
+          showToast(`-1 слот убран (${res?.updated_count ?? 0} польз.)`, 'info');
+          await loadAdminUsers();
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+        }
       });
     }
 
@@ -2239,19 +2647,20 @@
 
     // Make field events
     el.makeInput.addEventListener('focus', () => {
+      syncClearBtn(el.makeInput, el.btnClearMake);
       renderMakeDropdown(el.makeInput.value);
     });
 
     el.makeInput.addEventListener('input', (e) => {
       const val = e.target.value;
-      el.btnClearMake.classList.toggle('hidden', val.length === 0);
+      syncClearBtn(el.makeInput, el.btnClearMake);
       clearTimeout(state.makeSearchTimer);
       state.makeSearchTimer = setTimeout(() => {
         renderMakeDropdown(val);
       }, 200);
     });
 
-    el.btnClearMake.addEventListener('click', () => {
+    bindClearButton(el.btnClearMake, () => {
       el.makeInput.value = '';
       el.btnClearMake.classList.add('hidden');
       el.makeInput.focus();
@@ -2260,29 +2669,33 @@
 
     el.btnChangeMake.addEventListener('click', () => {
       triggerHaptic('light');
+      clearYearInputs();
+      if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');
       el.selectedMakeBadge.classList.add('hidden');
       el.makeInputWrapper.classList.remove('hidden');
       el.modelSelectionGroup.classList.add('hidden');
       el.makeInput.value = '';
+      syncClearBtn(el.makeInput, el.btnClearMake);
       el.makeInput.focus();
       renderMakeDropdown('');
     });
 
     // Model field events
     el.modelInput.addEventListener('focus', () => {
+      syncClearBtn(el.modelInput, el.btnClearModel);
       renderModelDropdown(el.modelInput.value);
     });
 
     el.modelInput.addEventListener('input', (e) => {
       const val = e.target.value;
-      el.btnClearModel.classList.toggle('hidden', val.length === 0);
+      syncClearBtn(el.modelInput, el.btnClearModel);
       clearTimeout(state.modelSearchTimer);
       state.modelSearchTimer = setTimeout(() => {
         renderModelDropdown(val);
       }, 150);
     });
 
-    el.btnClearModel.addEventListener('click', () => {
+    bindClearButton(el.btnClearModel, () => {
       el.modelInput.value = '';
       el.btnClearModel.classList.add('hidden');
       el.modelInput.focus();
@@ -2291,22 +2704,113 @@
 
     el.btnChangeModel.addEventListener('click', () => {
       triggerHaptic('light');
+      clearYearInputs();
       el.selectedModelBadge.classList.add('hidden');
       el.modelInputWrapper.classList.remove('hidden');
       el.modelInput.value = '';
+      syncClearBtn(el.modelInput, el.btnClearModel);
       el.modelInput.focus();
       renderModelDropdown('');
     });
 
-    // Close dropdowns on outside click inside modal
-    document.addEventListener('click', (e) => {
-      if (!el.makeInputWrapper.contains(e.target) && !el.makeDropdown.contains(e.target)) {
+    // Clear buttons for Years, HP, Engine Volumes
+    const simpleClearPairs = [
+      [el.fYearMin, el.btnClearYearMin],
+      [el.fYearMax, el.btnClearYearMax],
+      [el.fHpMin, el.btnClearHpMin],
+      [el.fHpMax, el.btnClearHpMax],
+      [el.fEngineVolMin, el.btnClearEngineVolMin],
+      [el.fEngineVolMax, el.btnClearEngineVolMax]
+    ];
+    simpleClearPairs.forEach(([inputEl, btnEl]) => {
+      if (!inputEl || !btnEl) return;
+      inputEl.addEventListener('input', () => syncClearBtn(inputEl, btnEl));
+      inputEl.addEventListener('focus', () => syncClearBtn(inputEl, btnEl));
+      bindClearButton(btnEl, () => {
+        inputEl.value = '';
+        btnEl.classList.add('hidden');
+        inputEl.focus();
+      });
+    });
+
+    // Dot-formatting (123.456) for Price & Mileage inputs
+    [el.fPriceMin, el.fPriceMax, el.fMileageMax].forEach(inputEl => {
+      if (!inputEl) return;
+      inputEl.addEventListener('input', () => {
+        const formatted = formatWithDots(inputEl.value);
+        if (inputEl.value !== formatted) {
+          inputEl.value = formatted;
+        }
+      });
+    });
+
+    // Origin filter events
+    if (el.btnOriginExclude) {
+      el.btnOriginExclude.addEventListener('click', () => {
+        triggerHaptic('light');
+        setOriginMode('exclude');
+      });
+    }
+    if (el.btnOriginInclude) {
+      el.btnOriginInclude.addEventListener('click', () => {
+        triggerHaptic('light');
+        setOriginMode('include');
+      });
+    }
+    if (el.originChips) {
+      el.originChips.querySelectorAll('.origin-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          triggerHaptic('light');
+          const code = chip.dataset.country;
+          if (!code) return;
+          if (state.originCountries.has(code)) {
+            state.originCountries.delete(code);
+          } else {
+            state.originCountries.add(code);
+          }
+          renderOriginFilterUI();
+        });
+      });
+    }
+
+    // Close all dropdowns on outside click / tap outside their .cascading-group
+    const handleOutsideDropdown = (e) => {
+      const makeGroup = el.makeInput?.closest('.cascading-group');
+      if (el.makeDropdown && makeGroup && !makeGroup.contains(e.target)) {
         el.makeDropdown.classList.add('hidden');
       }
-      if (!el.modelInputWrapper.contains(e.target) && !el.modelDropdown.contains(e.target)) {
+      const modelGroup = el.modelInput?.closest('.cascading-group');
+      if (el.modelDropdown && modelGroup && !modelGroup.contains(e.target)) {
         el.modelDropdown.classList.add('hidden');
       }
-    });
+      const cityGroup = el.cityInput?.closest('.cascading-group');
+      if (el.cityDropdown && cityGroup && !cityGroup.contains(e.target)) {
+        el.cityDropdown.classList.add('hidden');
+      }
+    };
+    document.addEventListener('click', handleOutsideDropdown);
+    document.addEventListener('touchstart', handleOutsideDropdown, { passive: true });
+
+    // Close open dropdowns when scrolling outside .cascading-dropdown
+    const handleScrollCloseDropdowns = (e) => {
+      const target = e.target;
+      if (target && typeof target.closest === 'function' && target.closest('.cascading-dropdown')) {
+        return;
+      }
+      if (el.makeDropdown && !el.makeDropdown.classList.contains('hidden')) {
+        el.makeDropdown.classList.add('hidden');
+      }
+      if (el.modelDropdown && !el.modelDropdown.classList.contains('hidden')) {
+        el.modelDropdown.classList.add('hidden');
+      }
+      if (el.cityDropdown && !el.cityDropdown.classList.contains('hidden')) {
+        el.cityDropdown.classList.add('hidden');
+      }
+    };
+    if (el.filterForm) {
+      el.filterForm.addEventListener('scroll', handleScrollCloseDropdowns, { passive: true });
+    }
+    window.addEventListener('scroll', handleScrollCloseDropdowns, { passive: true });
 
     // City autocomplete
     setupCityAutocomplete();
@@ -2354,13 +2858,13 @@
       });
     });
 
-    // Preset price chips
+    // Preset price chips (formatted with dots)
     document.querySelectorAll('.preset-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         triggerHaptic('light');
         const maxVal = chip.dataset.maxPrice;
-        if (maxVal) {
-          el.fPriceMax.value = maxVal;
+        if (maxVal && el.fPriceMax) {
+          el.fPriceMax.value = formatWithDots(maxVal);
         }
       });
     });
@@ -2368,47 +2872,18 @@
     // Filter Form Submit
     el.filterForm.addEventListener('submit', handleFilterSubmit);
 
-    // Stopwords events
-    el.btnAddStopword.addEventListener('click', addStopword);
-    el.newStopwordInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        addStopword();
-      }
-    });
-    el.btnSaveStopwords.addEventListener('click', saveStopwords);
-    el.btnResetStopwords.addEventListener('click', resetStopwords);
-
-    // API settings modal
-    el.btnApiSettings.addEventListener('click', () => {
-      triggerHaptic('light');
-      el.apiUrlInput.value = getApiBase();
-      el.apiModal.classList.remove('hidden');
-    });
-    el.btnApiClose.addEventListener('click', () => {
-      el.apiModal.classList.add('hidden');
-    });
-    el.apiModal.querySelector('.modal-backdrop').addEventListener('click', () => {
-      el.apiModal.classList.add('hidden');
-    });
-    el.btnApiReset.addEventListener('click', () => {
-      triggerHaptic('light');
-      localStorage.removeItem('api_base');
-      el.apiUrlInput.value = 'http://127.0.0.1:8000';
-      showToast('Сброшено на http://127.0.0.1:8000', 'info');
-    });
-    el.btnApiSave.addEventListener('click', () => {
-      triggerHaptic('success');
-      const val = el.apiUrlInput.value.trim();
-      if (val) {
-        localStorage.setItem('api_base', val);
-      } else {
-        localStorage.removeItem('api_base');
-      }
-      el.apiModal.classList.add('hidden');
-      showToast('Адрес API сохранён', 'success');
-      loadData();
-    });
+    // Optional legacy stopwords tab events (guarded)
+    if (el.btnAddStopword) el.btnAddStopword.addEventListener('click', addStopword);
+    if (el.newStopwordInput) {
+      el.newStopwordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addStopword();
+        }
+      });
+    }
+    if (el.btnSaveStopwords) el.btnSaveStopwords.addEventListener('click', saveStopwords);
+    if (el.btnResetStopwords) el.btnResetStopwords.addEventListener('click', resetStopwords);
   }
 
   // Security Helper: escape HTML

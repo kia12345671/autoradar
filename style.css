@@ -789,21 +789,27 @@ input:checked + .slider:before {
   width: 100%;
 }
 
+.cascading-input-wrapper .text-input {
+  padding-right: 38px;
+}
+
 .input-clear-btn {
   position: absolute;
-  right: 10px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(255, 255, 255, 0.1);
+  z-index: 20;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.12);
   border: none;
-  color: var(--tg-theme-hint-color, #7d8b99);
-  width: 22px;
-  height: 22px;
+  color: var(--tg-theme-hint-color, #9fb0c2);
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -1582,5 +1588,190 @@ input:checked + .slider:before {
 .text-danger:hover {
   text-decoration: underline;
 }
+
+/* Global hidden utility — guarantees #tab-btn-admin.hidden etc. are hidden */
+.hidden {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Subscription Tab (#tab-sub)
+   ========================================================================== */
+.sub-status-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sub-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-status-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sub-status-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--tg-theme-hint-color, #9fb0c2);
+}
+
+.sub-status-rows b {
+  color: var(--tg-theme-text-color, #f5f5f5);
+}
+
+.tariffs-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.tariff-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tariff-card.tariff-popular {
+  border-color: rgba(51, 144, 236, 0.55);
+  background: linear-gradient(135deg, rgba(51, 144, 236, 0.12), rgba(255, 255, 255, 0.02));
+}
+
+.tariff-card.tariff-pro {
+  border-color: rgba(255, 193, 7, 0.45);
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.10), rgba(255, 255, 255, 0.02));
+}
+
+.tariff-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tariff-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tariff-price {
+  font-size: 15px;
+  font-weight: 800;
+  color: #4dabf7;
+  white-space: nowrap;
+}
+
+.tariff-desc {
+  font-size: 12px;
+  color: var(--tg-theme-hint-color, #9fb0c2);
+  line-height: 1.4;
+}
+
+.sub-contact-wrap {
+  margin-top: 8px;
+}
+
+/* ==========================================================================
+   Origin Filter (#origin-filter-group)
+   ========================================================================== */
+.origin-mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.origin-mode-btn {
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  background: var(--input-bg);
+  color: var(--tg-theme-hint-color, #9fb0c2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.origin-mode-btn.active {
+  background: rgba(51, 144, 236, 0.18);
+  border-color: var(--accent-blue, #3390ec);
+  color: #fff;
+}
+
+.origin-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.origin-chip {
+  padding: 7px 11px;
+  border-radius: 16px;
+  border: 1px solid var(--border-light);
+  background: var(--input-bg);
+  color: var(--tg-theme-text-color, #e0e0e0);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.origin-chip.active {
+  background: rgba(51, 144, 236, 0.22);
+  border-color: var(--accent-blue, #3390ec);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Admin Bulk Actions Bar
+   ========================================================================== */
+.admin-bulk-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.btn-act-warn {
+  color: #ffb74d;
+  border-color: rgba(255, 183, 77, 0.35);
+}
+
+.btn-act-warn:hover {
+  background: rgba(255, 183, 77, 0.15);
+}
+
+.btn-act-success {
+  color: #66bb6a;
+  border-color: rgba(102, 187, 106, 0.35);
+}
+
+.btn-act-success:hover {
+  background: rgba(102, 187, 106, 0.15);
+}
+
 
 

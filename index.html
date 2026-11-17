@@ -22,7 +22,6 @@
         </div>
         <div class="header-actions">
           <div id="sub-badge" class="badge-pill loading">Загрузка...</div>
-          <button id="btn-api-settings" class="icon-btn" title="Настройки API" aria-label="API Settings">⚙️</button>
         </div>
       </div>
 
@@ -33,10 +32,9 @@
           <span>Мои поиски</span>
           <span id="filters-counter" class="counter-badge">0</span>
         </button>
-        <button id="tab-btn-stopwords" class="tab-btn" data-tab="stopwords">
-          <span class="tab-icon">⛔</span>
-          <span>Стоп-слова</span>
-          <span id="stopwords-counter" class="counter-badge">0</span>
+        <button id="tab-btn-sub" class="tab-btn" data-tab="sub">
+          <span class="tab-icon">💎</span>
+          <span>Подписка</span>
         </button>
         <button id="tab-btn-admin" class="tab-btn hidden" data-tab="admin">
           <span class="tab-icon">👑</span>
@@ -74,36 +72,57 @@
         </div>
       </section>
 
-      <!-- Tab 2: Stopwords -->
-      <section id="tab-stopwords" class="tab-view hidden">
-        <div class="stopwords-card">
-          <div class="stopwords-header">
-            <h3>Исключение нежелательных авто</h3>
-            <p class="section-hint">Объявления, содержащие эти слова в названии или описании, будут отсекаться автоматически.</p>
+      <!-- Tab 2: Subscription -->
+      <section id="tab-sub" class="tab-view hidden">
+        <div class="sub-status-card">
+          <div class="sub-status-header">
+            <span class="sub-status-title">💎 Ваш текущий тариф</span>
+            <span id="sub-status-role" class="badge-pill">Загрузка...</span>
           </div>
-
-          <div class="stopwords-input-row">
-            <input type="text" id="new-stopword-input" class="text-input" placeholder="Введите стоп-слово..." maxlength="40">
-            <button id="btn-add-stopword" class="action-btn">Добавить</button>
+          <div class="sub-status-rows">
+            <span>Срок действия: <b id="sub-status-expires">—</b></span>
+            <span>Активные слоты: <b id="sub-status-slots">0 из 1</b></span>
           </div>
+        </div>
 
-          <div class="stopwords-chips-container" id="stopwords-container">
-            <!-- Chips inserted via app.js -->
-          </div>
-
-          <div class="quick-stopwords-section">
-            <span class="quick-stopwords-title">Быстрое добавление:</span>
-            <div class="quick-stopwords-row" id="quick-stopwords-tab">
-              <!-- Inserted via app.js -->
+        <div class="tariffs-grid">
+          <div class="tariff-card">
+            <div class="tariff-top">
+              <span class="tariff-name">🎁 Пробный (24 часа)</span>
+              <span class="tariff-price">Бесплатно</span>
             </div>
+            <p class="tariff-desc">1 активный поиск, базовый интервал опроса.</p>
           </div>
 
-          <div class="stopwords-footer">
-            <button id="btn-reset-stopwords" class="text-btn">Сбросить всё</button>
-            <button id="btn-save-stopwords" class="primary-btn">
-              <span>Сохранить стоп-слова</span>
-            </button>
+          <div class="tariff-card">
+            <div class="tariff-top">
+              <span class="tariff-name">⭐ VIP Неделя (7 дней)</span>
+              <span class="tariff-price">490 ₽</span>
+            </div>
+            <p class="tariff-desc">До 3 активных поисков, приоритетный опрос без очереди.</p>
           </div>
+
+          <div class="tariff-card tariff-popular">
+            <div class="tariff-top">
+              <span class="tariff-name">🔥 VIP Месяц (30 дней)</span>
+              <span class="tariff-price">1.290 ₽</span>
+            </div>
+            <p class="tariff-desc">До 3 активных поисков, максимальная скорость, все площадки.</p>
+          </div>
+
+          <div class="tariff-card tariff-pro">
+            <div class="tariff-top">
+              <span class="tariff-name">👑 Перекуп PRO (30 дней)</span>
+              <span class="tariff-price">2.490 ₽</span>
+            </div>
+            <p class="tariff-desc">5+ активных поисков, индивидуальный лимит слотов.</p>
+          </div>
+        </div>
+
+        <div class="sub-contact-wrap">
+          <button type="button" id="btn-contact-admin" class="primary-btn" style="width: 100%;">
+            <span>💬 Написать администратору для подключения</span>
+          </button>
         </div>
       </section>
 
@@ -116,6 +135,14 @@
               <button id="btn-admin-refresh" class="btn-small">🔄 Обновить</button>
             </div>
             <p class="section-hint">Управление тарифными планами, сроками VIP-доступа и слотами активных фильтров.</p>
+          </div>
+
+          <!-- Bulk Admin Controls -->
+          <div class="admin-bulk-bar">
+            <button type="button" id="btn-admin-pause-all" class="btn-act btn-act-warn">⏸ Отключить фильтры всем (тест)</button>
+            <button type="button" id="btn-admin-resume-all" class="btn-act btn-act-success">▶️ Включить фильтры всем обратно</button>
+            <button type="button" id="btn-admin-bulk-plus" class="btn-act">➕ +1 слот всем</button>
+            <button type="button" id="btn-admin-bulk-minus" class="btn-act">➖ -1 слот всем</button>
           </div>
 
           <div id="admin-users-loading" class="state-container">
@@ -242,16 +269,37 @@
             <div id="model-dropdown" class="cascading-dropdown hidden"></div>
           </div>
 
+          <!-- Origin Filter Group (shown when 'any_car' mode is selected) -->
+          <div id="origin-filter-group" class="form-group hidden">
+            <div class="form-label-row">
+              <label class="form-label">Автопром (страны марок)</label>
+              <span class="form-hint" id="origin-summary-hint">Любой</span>
+            </div>
+            <div class="origin-mode-row">
+              <button type="button" class="origin-mode-btn active" id="btn-origin-exclude" data-origin-mode="exclude">Кроме выбранных (исключить)</button>
+              <button type="button" class="origin-mode-btn" id="btn-origin-include" data-origin-mode="include">Только выбранные</button>
+            </div>
+            <div class="origin-chips-row" id="origin-chips">
+              <button type="button" class="origin-chip" data-country="ru">🇷🇺 Русские</button>
+              <button type="button" class="origin-chip" data-country="de">🇩🇪 Немецкие</button>
+              <button type="button" class="origin-chip" data-country="jp">🇯🇵 Японские</button>
+              <button type="button" class="origin-chip" data-country="kr">🇰🇷 Корейские</button>
+              <button type="button" class="origin-chip" data-country="us">🇺🇸 Американские</button>
+              <button type="button" class="origin-chip" data-country="fr">🇫🇷 Французские</button>
+              <button type="button" class="origin-chip" data-country="cn">🇨🇳 Китайские</button>
+            </div>
+          </div>
+
           <!-- Price Inputs & Quick Chips -->
           <div class="form-group">
             <label class="form-label">Цена (₽)</label>
             <div class="input-row">
               <div class="input-col">
-                <input type="number" id="f-price-min" class="text-input" placeholder="От 100 000" min="0" step="10000">
+                <input type="text" inputmode="numeric" id="f-price-min" class="text-input" placeholder="От 100.000" autocomplete="off">
               </div>
               <span class="input-sep">—</span>
               <div class="input-col">
-                <input type="number" id="f-price-max" class="text-input" placeholder="До 500 000" min="0" step="10000">
+                <input type="text" inputmode="numeric" id="f-price-max" class="text-input" placeholder="До 500.000" autocomplete="off">
               </div>
             </div>
             <!-- Quick Chips -->
@@ -263,16 +311,22 @@
             </div>
           </div>
 
-          <!-- Year Range (1980–2026) -->
+          <!-- Year Range -->
           <div class="form-group">
             <label class="form-label">Год выпуска</label>
             <div class="input-row">
               <div class="input-col">
-                <input type="number" id="f-year-min" class="text-input" placeholder="От 1980" min="1980" max="2026">
+                <div class="cascading-input-wrapper">
+                  <input type="number" id="f-year-min" class="text-input" placeholder="От 1980" min="1980" max="2027">
+                  <button type="button" id="btn-clear-year-min" class="input-clear-btn hidden" aria-label="Очистить год от">✕</button>
+                </div>
               </div>
               <span class="input-sep">—</span>
               <div class="input-col">
-                <input type="number" id="f-year-max" class="text-input" placeholder="До 2026" min="1980" max="2026">
+                <div class="cascading-input-wrapper">
+                  <input type="number" id="f-year-max" class="text-input" placeholder="До 2027" min="1980" max="2027">
+                  <button type="button" id="btn-clear-year-max" class="input-clear-btn hidden" aria-label="Очистить год до">✕</button>
+                </div>
               </div>
             </div>
           </div>
@@ -280,7 +334,7 @@
           <!-- Mileage Max -->
           <div class="form-group">
             <label class="form-label">Максимальный пробег (км)</label>
-            <input type="number" id="f-mileage-max" class="text-input" placeholder="Например: 200 000" min="0" step="5000">
+            <input type="text" inputmode="numeric" id="f-mileage-max" class="text-input" placeholder="Например: 200.000" autocomplete="off">
           </div>
 
           <!-- Two-level Gearbox Selector -->
@@ -312,10 +366,44 @@
             </div>
           </div>
 
-          <!-- Engine volumes (optional) -->
+          <!-- Horsepower Range (HP) -->
           <div class="form-group">
-            <label class="form-label">Объём двигателя (л, через запятую)</label>
-            <input type="text" id="f-engine-volumes" class="text-input" placeholder="Например: 1.6, 2.0 (необязательно)">
+            <label class="form-label">Мощность (л.с.)</label>
+            <div class="input-row">
+              <div class="input-col">
+                <div class="cascading-input-wrapper">
+                  <input type="number" id="f-hp-min" class="text-input" placeholder="От, л.с." min="20" max="2000">
+                  <button type="button" id="btn-clear-hp-min" class="input-clear-btn hidden" aria-label="Очистить мощность от">✕</button>
+                </div>
+              </div>
+              <span class="input-sep">—</span>
+              <div class="input-col">
+                <div class="cascading-input-wrapper">
+                  <input type="number" id="f-hp-max" class="text-input" placeholder="До, л.с." min="20" max="2000">
+                  <button type="button" id="btn-clear-hp-max" class="input-clear-btn hidden" aria-label="Очистить мощность до">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Engine Volume Range (Liters) -->
+          <div class="form-group">
+            <label class="form-label">Объём двигателя (л)</label>
+            <div class="input-row">
+              <div class="input-col">
+                <div class="cascading-input-wrapper">
+                  <input type="text" inputmode="decimal" id="f-engine-vol-min" class="text-input" placeholder="От 1.4 л." autocomplete="off">
+                  <button type="button" id="btn-clear-engine-vol-min" class="input-clear-btn hidden" aria-label="Очистить объём от">✕</button>
+                </div>
+              </div>
+              <span class="input-sep">—</span>
+              <div class="input-col">
+                <div class="cascading-input-wrapper">
+                  <input type="text" inputmode="decimal" id="f-engine-vol-max" class="text-input" placeholder="До 2.5 л." autocomplete="off">
+                  <button type="button" id="btn-clear-engine-vol-max" class="input-clear-btn hidden" aria-label="Очистить объём до">✕</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Stopwords block in modal -->
@@ -361,28 +449,6 @@
             </button>
           </div>
         </form>
-      </div>
-    </div>
-
-    <!-- API Config Modal -->
-    <div id="api-modal" class="modal-overlay hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-sheet small-sheet">
-        <div class="sheet-handle"></div>
-        <div class="sheet-header">
-          <h2>Адрес бэкенда API</h2>
-          <button id="btn-api-close" class="close-btn">✕</button>
-        </div>
-        <div class="sheet-body">
-          <p class="section-hint">Укажите адрес бэкенда сервера Car Monitor, если приложение развёрнуто на внешнем хостинге (например, Cloudflare Tunnel, localhost.run или VPS).</p>
-          <div class="form-group">
-            <input type="text" id="api-url-input" class="text-input" placeholder="http://127.0.0.1:8000">
-          </div>
-          <div class="sheet-actions">
-            <button type="button" id="btn-api-reset" class="secondary-btn">По умолчанию</button>
-            <button type="button" id="btn-api-save" class="primary-btn">Применить</button>
-          </div>
-        </div>
       </div>
     </div>
 
