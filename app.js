@@ -59,16 +59,42 @@
       return _resolvedApiBase;
     }
 
-    // 2) Query GitHub Gist: first try GIST_API_URL, then GIST_RAW_URL fallback
+    // 2) Query GitHub Gist: first try direct GIST_RAW_URL (3s timeout), then fallback to GIST_API_URL
+    const gistRaw = GIST_RAW_URL || window.GIST_RAW_URL || window.APP_CONFIG?.GIST_RAW_URL || '';
+    if (gistRaw && gistRaw.trim()) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
+        const sep = gistRaw.includes('?') ? '&' : '?';
+        const gistUrl = gistRaw.trim() + sep + 't=' + Date.now();
+        const resp = await fetch(gistUrl, { cache: 'no-store', signal: controller.signal });
+        clearTimeout(timer);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.api_url && String(data.api_url).trim()) {
+            _resolvedApiBase = String(data.api_url).trim().replace(/\/+$/, '');
+            localStorage.setItem('api_base', _resolvedApiBase);
+            return _resolvedApiBase;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to resolve api_url from GIST_RAW_URL:', e);
+      }
+    }
+
     const gistApi = GIST_API_URL || window.GIST_API_URL || window.APP_CONFIG?.GIST_API_URL || '';
     if (gistApi && gistApi.trim()) {
       try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3000);
         const sep = gistApi.includes('?') ? '&' : '?';
         const apiUrl = gistApi.trim() + sep + 't=' + Date.now();
         const resp = await fetch(apiUrl, {
           cache: 'no-store',
-          headers: { 'Accept': 'application/vnd.github+json' }
+          headers: { 'Accept': 'application/vnd.github+json' },
+          signal: controller.signal
         });
+        clearTimeout(timer);
         if (resp.ok) {
           const data = await resp.json();
           const fileObj = data?.files?.['api_config.json'];
@@ -83,25 +109,6 @@
         }
       } catch (e) {
         console.warn('Failed to resolve api_url from GIST_API_URL:', e);
-      }
-    }
-
-    const gistRaw = GIST_RAW_URL || window.GIST_RAW_URL || window.APP_CONFIG?.GIST_RAW_URL || '';
-    if (gistRaw && gistRaw.trim()) {
-      try {
-        const sep = gistRaw.includes('?') ? '&' : '?';
-        const gistUrl = gistRaw.trim() + sep + 't=' + Date.now();
-        const resp = await fetch(gistUrl, { cache: 'no-store' });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.api_url && String(data.api_url).trim()) {
-            _resolvedApiBase = String(data.api_url).trim().replace(/\/+$/, '');
-            localStorage.setItem('api_base', _resolvedApiBase);
-            return _resolvedApiBase;
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to resolve api_url from GIST_RAW_URL:', e);
       }
     }
 
@@ -962,6 +969,11 @@
           const target = state.filters.find(f => f.id === filterId);
           if (target) target.notifications_enabled = res.notifications_enabled;
 
+          if (state.user) {
+            state.user.active_filters_count = state.filters.filter(f => f.notifications_enabled).length;
+            if (typeof renderHeader === 'function') renderHeader();
+          }
+
           try {
             localStorage.setItem('ar_cached_filters', JSON.stringify(state.filters));
           } catch (e) {}
@@ -1001,6 +1013,10 @@
         try {
           await apiFetch(`/api/filters/${filterId}`, { method: 'DELETE' });
           state.filters = state.filters.filter(f => f.id !== filterId);
+          if (state.user) {
+            state.user.active_filters_count = state.filters.filter(f => f.notifications_enabled).length;
+            if (typeof renderHeader === 'function') renderHeader();
+          }
           try {
             localStorage.setItem('ar_cached_filters', JSON.stringify(state.filters));
           } catch (e) {}
@@ -1277,7 +1293,7 @@
     if (el.radiusSelectorGroup) el.radiusSelectorGroup.classList.remove('hidden');
 
     // Modal stopwords: initialize from current user stopwords or defaultStopwords
-    state.modalStopwords = state.stopwords.length ? [...state.stopwords] : [...state.defaultStopwords];
+    state.modalStopwords = (Array.isArray(state.stopwords) && state.stopwords.length) ? [...state.stopwords] : (Array.isArray(state.defaultStopwords) ? [...state.defaultStopwords] : []);
     renderModalStopwords();
 
     setGearboxMode('any');
@@ -1450,10 +1466,16 @@
     state.selectedModel = modelObj;
     el.fSearchMode.value = 'exact';
     el.fModel.value = modelObj.model || modelObj.id;
-    el.fDisplayName.value = `${state.selectedMake.name} ${modelObj.name}`;
+    let cleanModelName = modelObj.name || '';
+    const makePrefix = (state.selectedMake.name || '').toLowerCase();
+    if (cleanModelName.toLowerCase().startsWith(makePrefix)) {
+      cleanModelName = cleanModelName.slice(state.selectedMake.name.length).trim();
+    }
+    const combinedName = cleanModelName ? `${state.selectedMake.name} ${cleanModelName}` : state.selectedMake.name;
+    el.fDisplayName.value = combinedName;
     el.fDromModel.value = modelObj.drom_model || modelObj.model || modelObj.id;
     el.fAutoruModel.value = modelObj.autoru_model || modelObj.model || modelObj.id;
-    el.fAvitoQuery.value = modelObj.avito_query || `${state.selectedMake.name} ${modelObj.name}`;
+    el.fAvitoQuery.value = modelObj.avito_query || combinedName;
 
     // Overwrite or clear years when user selects a model/generation
     if (!preserveExistingYears) {
@@ -1597,7 +1619,7 @@
       </div>
       <span class="dropdown-item-badge">Любая марка</span>
     `;
-    anyCarItem.addEventListener('click', selectAnyCar);
+    anyCarItem.addEventListener('click', () => selectAnyCar(false));
     el.makeDropdown.appendChild(anyCarItem);
 
     // 3. Filter makes list
@@ -1659,7 +1681,7 @@
       </div>
       <span class="dropdown-item-badge">Вся марка</span>
     `;
-    makeOnlyItem.addEventListener('click', selectMakeOnly);
+    makeOnlyItem.addEventListener('click', () => selectMakeOnly(false));
     el.modelDropdown.appendChild(makeOnlyItem);
 
     // 2. Filter models list
@@ -1843,8 +1865,13 @@
     return str.toString().toLowerCase().replace(/ё/g, 'е').trim();
   }
 
+  function updateRadiusDisplay() {
+    setRadiusKm(state.radiusKm !== undefined ? state.radiusKm : 100);
+  }
+
   function selectCity(cityObj) {
     if (!cityObj) return;
+    const prevSlug = state.selectedCity ? state.selectedCity.slug : null;
     state.selectedCity = cityObj;
     state.isCitySelected = true;
     if (el.cityInput) el.cityInput.value = cityObj.name;
@@ -1854,14 +1881,20 @@
 
     if (cityObj.slug === 'rossiya') {
       if (el.radiusSelectorGroup) el.radiusSelectorGroup.classList.add('hidden');
+      state.radiusKm = 0;
       setRadiusKm(0);
     } else {
       if (el.radiusSelectorGroup) el.radiusSelectorGroup.classList.remove('hidden');
-      const currentRadius = parseInt(el.fRadiusKm ? el.fRadiusKm.value : '100', 10);
-      if (currentRadius === 0 && (!state.selectedCity || state.selectedCity.slug === 'rossiya')) {
+      if (prevSlug === 'rossiya' && cityObj.slug !== 'rossiya') {
+        if (el.fRadiusKm) el.fRadiusKm.value = '100';
+        state.radiusKm = 100;
         setRadiusKm(100);
+        updateRadiusDisplay();
       } else {
-        setRadiusKm(currentRadius);
+        const currentRadius = parseInt(el.fRadiusKm ? el.fRadiusKm.value : '100', 10);
+        const resolvedRadius = (currentRadius === 0 && (!state.selectedCity || state.selectedCity.slug === 'rossiya')) ? 100 : currentRadius;
+        state.radiusKm = resolvedRadius;
+        setRadiusKm(resolvedRadius);
       }
     }
 
@@ -1999,16 +2032,17 @@
       });
     });
 
-    document.addEventListener('click', (e) => {
-      const cityGroup = el.cityInput.closest('.cascading-group');
-      if (el.cityDropdown && cityGroup && !cityGroup.contains(e.target)) {
-        el.cityDropdown.classList.add('hidden');
-      }
-    });
   }
 
   // 10. Open Edit Filter Modal
-  function openEditFilterModal(filterId) {
+  async function openEditFilterModal(filterId) {
+    if (!state.catalogMakes || state.catalogMakes.length === 0) {
+      await loadCatalogMakes();
+    }
+    if (!state.allCities || state.allCities.length === 0) {
+      await loadCities();
+    }
+
     const f = state.filters.find(item => item.id === filterId);
     if (!f) return;
 
@@ -2412,8 +2446,10 @@
 
       const roleClass = `role-${u.role || 'trial'}`;
       const roleName = (u.role || 'trial').toUpperCase();
-      const limitText = u.effective_limit === 999999 ? '∞' : (u.effective_limit ?? 2);
-      const isCustomLimit = u.custom_limit ? ` (индивид. ${u.custom_limit})` : '';
+      const isAdmin = u.role === 'admin';
+      const isUnlimited = isAdmin || u.effective_limit === null || u.effective_limit === 999999;
+      const limitText = isUnlimited ? '∞' : (u.effective_limit ?? 2);
+      const isCustomLimit = (!isAdmin && u.custom_limit) ? ` (индивид. ${u.custom_limit})` : '';
 
       let expText = 'Бессрочно';
       if (u.expires_at) {
@@ -2447,6 +2483,7 @@
           <span>Всего поисков: <b>${u.filter_count || 0}</b></span>
         </div>
 
+        ${isAdmin ? '' : `
         <div class="admin-user-actions">
           <button class="btn-act" data-act="adjust_sub" data-uid="${u.chat_id || u.user_id}" data-role="trial" data-days="1">🎁 +1д Триал</button>
           <button class="btn-act" data-act="adjust_sub" data-uid="${u.chat_id || u.user_id}" data-role="trial" data-days="-1">🎁 -1д Триал</button>
@@ -2459,7 +2496,7 @@
           <button class="btn-act" data-act="adjust_limit" data-uid="${u.chat_id || u.user_id}" data-delta="-1">➖ -1 слот</button>
           <button class="btn-act" data-act="limit" data-uid="${u.chat_id || u.user_id}" data-val="">🔄 Сброс лимита</button>
           <button class="btn-act btn-act-danger" data-act="revoke" data-uid="${u.chat_id || u.user_id}">❌ Обнулить</button>
-        </div>
+        </div>`}
       `;
 
       el.adminUsersList.appendChild(card);
@@ -2554,10 +2591,12 @@
     if (el.btnContactAdmin) {
       el.btnContactAdmin.addEventListener('click', () => {
         triggerHaptic('light');
-        const adminUrl = 'tg://user?id=1068377358';
+        const adminUrl = 'https://t.me/kirill_prm';
         try {
-          if (tg && typeof tg.openTelegramLink === 'function') {
-            window.open(adminUrl, '_blank');
+          if (tg && typeof tg.openTelegramLink === 'function' && adminUrl.startsWith('https://t.me/')) {
+            tg.openTelegramLink(adminUrl);
+          } else if (tg && typeof tg.openLink === 'function') {
+            tg.openLink(adminUrl);
           } else {
             window.open(adminUrl, '_blank');
           }
@@ -2633,6 +2672,10 @@
 
     // Create filter button
     el.btnCreateFilter.addEventListener('click', openCreateFilterModal);
+    const btnEmptyCreate = document.getElementById('btn-empty-create-filter');
+    if (btnEmptyCreate) {
+      btnEmptyCreate.addEventListener('click', openCreateFilterModal);
+    }
 
     // Modal controls
     el.btnModalClose.addEventListener('click', () => {
@@ -2905,6 +2948,7 @@
 
     // Background keep-alive every 25 seconds while Mini App window is open
     setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
       apiFetch('/api/health').catch(e => console.debug('Keep-alive ping error:', e));
     }, 25000);
   });
