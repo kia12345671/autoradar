@@ -32,6 +32,11 @@
           <span>Мои поиски</span>
           <span id="filters-counter" class="counter-badge">0</span>
         </button>
+        <button id="tab-btn-fav" class="tab-btn" data-tab="favorites">
+          <span class="tab-icon">⭐</span>
+          <span>Избранное</span>
+          <span id="fav-counter" class="counter-badge">0</span>
+        </button>
         <button id="tab-btn-sub" class="tab-btn" data-tab="sub">
           <span class="tab-icon">💎</span>
           <span>Подписка</span>
@@ -69,6 +74,24 @@
 
         <div id="filters-list" class="cards-grid">
           <!-- Filter cards inserted via app.js -->
+        </div>
+      </section>
+
+      <!-- Tab: Favorites -->
+      <section id="tab-favorites" class="tab-view hidden">
+        <div id="fav-loading" class="state-container hidden">
+          <div class="spinner"></div>
+          <p>Загрузка избранного...</p>
+        </div>
+
+        <div id="fav-empty" class="state-container hidden">
+          <div class="state-icon">⭐</div>
+          <h3>Избранное пусто</h3>
+          <p>Нажимайте «⭐ В избранное» в уведомлениях Telegram, чтобы отслеживать цены и добавлять заметки по машинам.</p>
+        </div>
+
+        <div id="favorites-list" class="cards-grid">
+          <!-- Favorite cards inserted via app.js -->
         </div>
       </section>
 
@@ -427,6 +450,18 @@
               </div>
             </div>
             <p class="section-hint" style="margin-top: 6px;">Объявления с этими словами не будут присылаться.</p>
+          </div>
+
+          <!-- Only owners switch in modal -->
+          <div class="form-group switch-group">
+            <div class="switch-info">
+              <span class="switch-title">👤 Только от собственников (без автосалонов)</span>
+              <span class="switch-sub">Отсекать автосалоны, дилеров и комиссионные площадки</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="f-only-owners">
+              <span class="slider"></span>
+            </label>
           </div>
 
           <!-- Notifications switch in modal -->

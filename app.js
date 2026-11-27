@@ -39,7 +39,7 @@
                         throw err;               }               return data;             } catch (err) {               // If it's a network drop and retries remain, wait and retry
                if (isNetworkError(err) && attempt < maxRetries) {                 console.warn(`[apiFetch] Network error (${err.message}) on ${path}. Retrying in ${retryDelays[attempt]}ms (attempt ${attempt + 1}/${maxRetries})...`);                 await new Promise(r => setTimeout(r, retryDelays[attempt]));                 continue;               }                      console.error(`API Error [${options.method || 'GET'} ${path}]:`, err);
                       if (isNetworkError(err)) {                 const friendlyErr = new Error(FRIENDLY_NETWORK_ERROR);                 friendlyErr.status = 0;                 friendlyErr.detail = FRIENDLY_NETWORK_ERROR;                 throw friendlyErr;               }               throw err;             }           }         }                // 3. Application State
-         const state = {           user: null,           filters: [],           stopwords: [],           activeTab: 'filters',           editingFilterId: null,                  // Catalog state
+         const state = {           user: null,           filters: [],           favorites: [],           favoritesLoaded: false,           stopwords: [],           activeTab: 'filters',           editingFilterId: null,                  // Catalog state
            catalogMakes: [],           currentMakeModels: [],
                   selectedMake: null,     // { id, name, ru_name, display, drom_slug, autoru_slug, avito_slug }
            selectedModel: null,    // { id, model, name, ru_name, display, years, drom_model, autoru_model, avito_query }
@@ -63,7 +63,7 @@
                   'cn': '🇨🇳 Китайские'
                 };
                        // DOM Elements
-         const el = {           subBadge: document.getElementById('sub-badge'),           tabBtnFilters: document.getElementById('tab-btn-filters'),           tabBtnSub: document.getElementById('tab-btn-sub'),           filtersCounter: document.getElementById('filters-counter'),           tabFilters: document.getElementById('tab-filters'),
+         const el = {           subBadge: document.getElementById('sub-badge'),           tabBtnFilters: document.getElementById('tab-btn-filters'),           tabBtnFav: document.getElementById('tab-btn-fav'),           favCounter: document.getElementById('fav-counter'),           tabBtnSub: document.getElementById('tab-btn-sub'),           filtersCounter: document.getElementById('filters-counter'),           tabFilters: document.getElementById('tab-filters'),           tabFav: document.getElementById('tab-favorites'),           favLoading: document.getElementById('fav-loading'),           favEmpty: document.getElementById('fav-empty'),           favoritesList: document.getElementById('favorites-list'),
                   tabSub: document.getElementById('tab-sub'),           subStatusRole: document.getElementById('sub-status-role'),           subStatusExpires: document.getElementById('sub-status-expires'),           subStatusSlots: document.getElementById('sub-status-slots'),           btnContactAdmin: document.getElementById('btn-contact-admin'),           btnCreateFilter: document.getElementById('btn-create-filter'),           filtersLoading: document.getElementById('filters-loading'),           filtersEmpty: document.getElementById('filters-empty'),           filtersList: document.getElementById('filters-list'),
                   stopwordsContainer: null,                  // Modal Filter Elements
            filterModal: document.getElementById('filter-modal'),           modalTitle: document.getElementById('modal-title'),           btnModalClose: document.getElementById('btn-modal-close'),           btnModalCancel: document.getElementById('btn-modal-cancel'),           filterForm: document.getElementById('filter-form'),                  // Hidden inputs
@@ -78,7 +78,7 @@
                   originChips: document.getElementById('origin-chips'),                  // Specs Inputs
            fPriceMin: document.getElementById('f-price-min'),           fPriceMax: document.getElementById('f-price-max'),           fYearMin: document.getElementById('f-year-min'),           fYearMax: document.getElementById('f-year-max'),           btnClearYearMin: document.getElementById('btn-clear-year-min'),           btnClearYearMax: document.getElementById('btn-clear-year-max'),           fMileageMax: document.getElementById('f-mileage-max'),
                   fHpMin: document.getElementById('f-hp-min'),           fHpMax: document.getElementById('f-hp-max'),           btnClearHpMin: document.getElementById('btn-clear-hp-min'),           btnClearHpMax: document.getElementById('btn-clear-hp-max'),           fEngineVolMin: document.getElementById('f-engine-vol-min'),           fEngineVolMax: document.getElementById('f-engine-vol-max'),           btnClearEngineVolMin: document.getElementById('btn-clear-engine-vol-min'),           btnClearEngineVolMax: document.getElementById('btn-clear-engine-vol-max'),
-                  fEngineVolumes: null,           fNotificationsEnabled: document.getElementById('f-notifications-enabled'),           saveBtnText: document.getElementById('save-btn-text'),                  // City Autocomplete Controls
+                  fEngineVolumes: null,           fOnlyOwners: document.getElementById('f-only-owners'),           fNotificationsEnabled: document.getElementById('f-notifications-enabled'),           saveBtnText: document.getElementById('save-btn-text'),                  // City Autocomplete Controls
            cityInput: document.getElementById('city-input'),           btnClearCity: document.getElementById('btn-clear-city'),           cityDropdown: document.getElementById('city-dropdown'),           cityErrorHint: document.getElementById('city-error-hint'),           cityStatusHint: document.getElementById('city-status-hint'),
                   radiusSelectorGroup: document.getElementById('radius-selector-group'),           fCity: document.getElementById('f-city'),           fLat: document.getElementById('f-lat'),           fLon: document.getElementById('f-lon'),           fRadiusKm: document.getElementById('f-radius-km'),                  // Stopwords Quick Hints & Modal Controls
            quickStopwordsTab: null,           quickStopwordsModal: document.getElementById('quick-stopwords-modal'),           modalStopwordInput: document.getElementById('modal-stopword-input'),
@@ -136,7 +136,7 @@
                         }               } catch (e) {}             }             el.subBadge.textContent = `🎁 Триал: ост. ${timeText} (${activeCount}/${limitDisplay})`;
                     el.subBadge.classList.add('trial');           } else {             el.subBadge.textContent = `🔒 Доступ истёк (${activeCount}/${limitDisplay})`;
                     el.subBadge.classList.add('expired');           }                  if (Boolean(state.user?.is_admin || state.user?.role === 'admin') === true && el.tabBtnAdmin) {             el.tabBtnAdmin.classList.remove('hidden');           } else if (el.tabBtnAdmin) {             el.tabBtnAdmin.classList.add('hidden');           }
-                         if (el.filtersCounter) el.filtersCounter.textContent = state.filters.length;           if (el.stopwordsCounter) el.stopwordsCounter.textContent = state.stopwords.length;           renderSubscriptionTab();         }                // Render Subscription Tab
+                         if (el.filtersCounter) el.filtersCounter.textContent = state.filters.length;           if (el.stopwordsCounter) el.stopwordsCounter.textContent = state.stopwords.length;           if (el.favCounter) el.favCounter.textContent = state.favoritesLoaded ? state.favorites.length : (state.user?.favorites_count ?? 0);           renderSubscriptionTab();         }                // Render Subscription Tab
          function renderSubscriptionTab() {           if (!state.user || !el.subStatusRole) return;           const role = state.user.role || 'trial';           const isAdmin = Boolean(state.user?.is_admin || role === 'admin');           const activeCount = state.user.active_filters_count ?? state.filters.filter(f => f.notifications_enabled).length;
                   const limit = state.user.filter_limit ?? 1;           const limitDisplay = (limit === null || limit === 999999 || isAdmin) ? '∞' : limit;                  el.subStatusRole.className = 'badge-pill';           let expiresLabel = '—';                  if (isAdmin) {             el.subStatusRole.textContent = '👑 Администратор';
                     el.subStatusRole.classList.add('active');             expiresLabel = 'Бессрочно';
@@ -203,7 +203,7 @@
                             cName = found.name;                   } else {                     cName = String(filter.city).charAt(0).toUpperCase() + String(filter.city).slice(1);                   }                 }               }               const rad = parseInt(filter.radius_km, 10) || 0;               const radText = (rad > 0 && cityKey !== 'rossiya') ? ` (+${rad} км)` : '';
                       specs.push(`<span class="spec-chip"><span class="spec-icon">📍</span> ${escapeHtml(cName)}${radText}</span>`);
                              card.innerHTML = `                 <div class="card-top-row">
-                          <div class="card-title-group">                     <div class="card-badge-row">                       <span class="card-mode-tag ${modeClass}">${modeText}</span>                     </div>                     <div class="card-title">${escapeHtml(title)}</div>                   </div>                   <label class="toggle-switch" title="Включить/выключить уведомления">
+                          <div class="card-title-group">                     <div class="card-badge-row">                       <span class="card-mode-tag ${modeClass}">${modeText}</span>${filter.only_owners ? ' <span class="card-mode-tag owner_tag">👤 Собственник</span>' : ''}                     </div>                     <div class="card-title">${escapeHtml(title)}</div>                   </div>                   <label class="toggle-switch" title="Включить/выключить уведомления">
                             <input type="checkbox" class="filter-toggle" data-id="${filter.id}" ${isEnabled ? 'checked' : ''}>                     <span class="slider"></span>
                           </label>                 </div>                        <div class="card-specs">                   ${specs.length > 0 ? specs.join('') : '<span class="spec-chip">Без ограничений параметров</span>'}
                         </div>                        <div class="card-bottom-row">                   <span class="card-status-text" id="status-text-${filter.id}">                     ${isEnabled ? '🔔 Уведомления включены' : '🔕 Уведомления отключены'}
@@ -282,7 +282,7 @@
                   if (el.cityErrorHint) el.cityErrorHint.classList.add('hidden');           setRadiusKm(100);           if (el.radiusSelectorGroup) el.radiusSelectorGroup.classList.remove('hidden');                  // Modal stopwords: keep loaded user's stopwords (including intentionally cleared []),
            // falling back to defaultStopwords only before user profile is loaded
            state.modalStopwords = state.user             ? (Array.isArray(state.stopwords) ? [...state.stopwords] : [])             : ((Array.isArray(state.stopwords) && state.stopwords.length)
-                        ? [...state.stopwords]                 : (Array.isArray(state.defaultStopwords) ? [...state.defaultStopwords] : []));           renderModalStopwords();                  setGearboxMode('any');           el.fNotificationsEnabled.checked = true;           syncAllModalClearButtons();                  openModal();           // Pre-load makes and cities if not loaded
+                        ? [...state.stopwords]                 : (Array.isArray(state.defaultStopwords) ? [...state.defaultStopwords] : []));           renderModalStopwords();                  setGearboxMode('any');           if (el.fOnlyOwners) el.fOnlyOwners.checked = false;           el.fNotificationsEnabled.checked = true;           syncAllModalClearButtons();                  openModal();           // Pre-load makes and cities if not loaded
            loadCatalogMakes();           loadCities();         }                function resetCarSelection() {           state.selectedMake = null;           state.selectedModel = null;
                   state.isAnyCar = false;           state.currentMakeModels = [];                  el.fSearchMode.value = 'exact';           el.fMake.value = '';           el.fModel.value = '';           el.fDisplayName.value = '';           el.fDromMake.value = '';           el.fDromModel.value = '';           el.fAutoruMake.value = '';           el.fAutoruModel.value = '';           el.fAvitoQuery.value = '';                  el.makeInput.value = '';           el.modelInput.value = '';                  el.makeInputWrapper.classList.remove('hidden');           el.selectedMakeBadge.classList.add('hidden');
                   el.btnClearMake.classList.add('hidden');                  el.modelSelectionGroup.classList.add('hidden');           el.modelInputWrapper.classList.remove('hidden');           el.selectedModelBadge.classList.add('hidden');           el.btnClearModel.classList.add('hidden');                  if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');                  el.makeStatusHint.textContent = 'Выберите или начните ввод';
@@ -435,7 +435,7 @@ function selectMake(makeObj, preserveExistingYears = false) {
                   el.saveBtnText.textContent = 'Сохранить изменения';
                          el.filterForm.reset();           resetCarSelection();           resetOriginFilter();                  // Inputs formatted with dots where numeric money/mileage
                   if (el.fPriceMin) el.fPriceMin.value = f.price_min ? formatWithDots(f.price_min) : '';           if (el.fPriceMax) el.fPriceMax.value = f.price_max ? formatWithDots(f.price_max) : '';           if (el.fYearMin) el.fYearMin.value = f.year_min || '';           if (el.fYearMax) el.fYearMax.value = f.year_max || '';           if (el.fMileageMax) el.fMileageMax.value = f.mileage_max ? formatWithDots(f.mileage_max) : '';           if (el.fHpMin) el.fHpMin.value = f.hp_min || '';           if (el.fHpMax) el.fHpMax.value = f.hp_max || '';
-                  if (el.fEngineVolMin) el.fEngineVolMin.value = (f.engine_vol_min !== null && f.engine_vol_min !== undefined) ? f.engine_vol_min : '';           if (el.fEngineVolMax) el.fEngineVolMax.value = (f.engine_vol_max !== null && f.engine_vol_max !== undefined) ? f.engine_vol_max : '';           if (el.fEngineVolumes) el.fEngineVolumes.value = f.engine_volumes || '';           el.fNotificationsEnabled.checked = Boolean(f.notifications_enabled);                  // Restore origin filter
+                  if (el.fEngineVolMin) el.fEngineVolMin.value = (f.engine_vol_min !== null && f.engine_vol_min !== undefined) ? f.engine_vol_min : '';           if (el.fEngineVolMax) el.fEngineVolMax.value = (f.engine_vol_max !== null && f.engine_vol_max !== undefined) ? f.engine_vol_max : '';           if (el.fEngineVolumes) el.fEngineVolumes.value = f.engine_volumes || '';           if (el.fOnlyOwners) el.fOnlyOwners.checked = Boolean(f.only_owners);           el.fNotificationsEnabled.checked = Boolean(f.notifications_enabled);                  // Restore origin filter
            const savedOriginMode = (f.origin_mode || 'any').toLowerCase();
                   state.originMode = (savedOriginMode === 'include') ? 'include' : 'exclude';           const savedCountries = (f.origin_countries || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);           state.originCountries = new Set(savedCountries);           renderOriginFilterUI();                  // City Selection
            const citySlug = f.city || 'moskva';           let cityObj = (state.citiesMap && state.citiesMap[citySlug]) || (state.allCities && state.allCities.find(c => c.slug === citySlug));
@@ -484,7 +484,7 @@ function selectMake(makeObj, preserveExistingYears = false) {
                     } else {               const exact = (state.allCities || []).find(c => normalizeText(c.name) === typed);               if (exact) {                 selectCity(exact);               } else {                 if (el.cityErrorHint) el.cityErrorHint.classList.remove('hidden');
                         if (el.cityInput) el.cityInput.focus();                 triggerHaptic('error');                 return;               }             }           }                  const payload = {             search_mode: mode,             make: make,             model: model,             display_name: displayName,             drom_make: dromMake,             drom_model: dromModel,             autoru_make: autoruMake,             autoru_model: autoruModel,             avito_query: avitoQuery,             year_min: yearMin,             year_max: yearMax,             price_min: priceMin,
                     price_max: priceMax,             mileage_max: mileageMax,             gearbox: gearbox,             engine_volumes: el.fEngineVolumes ? el.fEngineVolumes.value.trim() : '',             hp_min: hpMin,             hp_max: hpMax,             engine_vol_min: engineVolMin,             engine_vol_max: engineVolMax,             origin_mode: originModeVal,             origin_countries: originCountriesStr,             city: el.fCity.value || 'moskva',             lat: parseFloat(el.fLat.value) || 55.7558,             lon: parseFloat(el.fLon.value) || 37.6173,
-                    radius_km: parseInt(el.fRadiusKm ? el.fRadiusKm.value : '0', 10) || 0,             notifications_enabled: el.fNotificationsEnabled.checked ? 1 : 0,             stopwords: state.modalStopwords           };                  const isEdit = state.editingFilterId !== null;           const path = isEdit ? `/api/filters/${state.editingFilterId}` : '/api/filters';           const method = isEdit ? 'PUT' : 'POST';                  try {             const btn = document.getElementById('btn-modal-save');             btn.disabled = true;             el.saveBtnText.textContent = 'Сохранение...';
+                    radius_km: parseInt(el.fRadiusKm ? el.fRadiusKm.value : '0', 10) || 0,             only_owners: (el.fOnlyOwners && el.fOnlyOwners.checked) ? 1 : 0,             notifications_enabled: el.fNotificationsEnabled.checked ? 1 : 0,             stopwords: state.modalStopwords           };                  const isEdit = state.editingFilterId !== null;           const path = isEdit ? `/api/filters/${state.editingFilterId}` : '/api/filters';           const method = isEdit ? 'PUT' : 'POST';                  try {             const btn = document.getElementById('btn-modal-save');             btn.disabled = true;             el.saveBtnText.textContent = 'Сохранение...';
                            const res = await apiFetch(path, {               method: method,               body: JSON.stringify(payload)             });                    if (isEdit) {               const idx = state.filters.findIndex(f => f.id === state.editingFilterId);               if (idx !== -1) state.filters[idx] = res.filter;               showToast('Поиск обновлён', 'success');
                     } else {               state.filters.unshift(res.filter);               showToast('Поиск успешно добавлен', 'success');
                     }                    try {               localStorage.setItem('ar_cached_filters', JSON.stringify(state.filters));
@@ -530,12 +530,123 @@ function selectMake(makeObj, preserveExistingYears = false) {
                         } else if (act === 'revoke' || act === 'unvip') {                   await apiFetch(`/api/admin/users/${uid}/revoke`, {                     method: 'POST'                   });                   showToast(`Доступ обнулён и поиски отключены для ${uid}`, 'info');
                         }                 await loadAdminUsers();               } catch (err) {                 showToast('Ошибка операции: ' + err.message, 'error');
                       } finally {                 btn.disabled = false;               }
-                    });           });         }                // 13. Tab Navigation Switching
-         function switchTab(tabName) {           triggerHaptic('light');           state.activeTab = tabName;                  if (el.tabBtnFilters) el.tabBtnFilters.classList.toggle('active', tabName === 'filters');           if (el.tabBtnSub) el.tabBtnSub.classList.toggle('active', tabName === 'sub');           if (el.tabBtnStopwords) el.tabBtnStopwords.classList.toggle('active', tabName === 'stopwords');           if (el.tabBtnAdmin) el.tabBtnAdmin.classList.toggle('active', tabName === 'admin');
-                         if (el.tabFilters) el.tabFilters.classList.toggle('hidden', tabName !== 'filters');           if (el.tabSub) el.tabSub.classList.toggle('hidden', tabName !== 'sub');           if (el.tabStopwords) el.tabStopwords.classList.toggle('hidden', tabName !== 'stopwords');           if (el.tabAdmin) el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');                  if (tabName === 'sub') {             renderSubscriptionTab();           } else if (tabName === 'admin') {             loadAdminUsers();           }         }                // 14. Event Listeners Setup
+                    });           });         }                // 12B. Favorites Tab Logic
+        async function loadFavorites() {
+          if (!el.favoritesList) return;
+          try {
+            if (el.favLoading) el.favLoading.classList.remove('hidden');
+            if (el.favEmpty) el.favEmpty.classList.add('hidden');
+            const data = await apiFetch('/api/favorites');
+            state.favorites = Array.isArray(data?.favorites) ? data.favorites : [];
+            state.favoritesLoaded = true;
+            if (el.favCounter) el.favCounter.textContent = state.favorites.length;
+            renderFavorites();
+          } catch (err) {
+            console.error('loadFavorites error:', err);
+            showToast('Ошибка загрузки избранного: ' + (err.message || err), 'error');
+          } finally {
+            if (el.favLoading) el.favLoading.classList.add('hidden');
+          }
+        }
+
+        function renderFavorites() {
+          if (!el.favoritesList) return;
+          if (el.favCounter) el.favCounter.textContent = state.favorites.length;
+          if (!state.favorites || state.favorites.length === 0) {
+            if (el.favEmpty) el.favEmpty.classList.remove('hidden');
+            el.favoritesList.innerHTML = '';
+            return;
+          }
+          if (el.favEmpty) el.favEmpty.classList.add('hidden');
+          el.favoritesList.innerHTML = '';
+
+          state.favorites.forEach(fav => {
+            const card = document.createElement('div');
+            card.className = 'fav-card';
+            const adId = String(fav.ad_id || '');
+            const title = fav.title || 'Без названия';
+            const rawUrl = String(fav.url || '').trim();
+            const safeUrl = (rawUrl.startsWith('https://') || rawUrl.startsWith('http://')) ? escapeHtml(rawUrl) : '';
+            const lastPrice = fav.last_price || fav.price || 0;
+            const dropAmt = fav.price_drop_amount || 0;
+            const source = fav.source || '';
+            const city = fav.city || '';
+            const metaText = [source, city].filter(Boolean).join(' · ');
+
+            card.innerHTML = `
+              <div class="fav-card-header">
+                <div class="card-title-group">
+                  ${metaText ? `<div class="card-badge-row"><span class="card-mode-tag">${escapeHtml(metaText)}</span></div>` : ''}
+                  ${safeUrl
+                    ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="fav-card-title">${escapeHtml(title)}</a>`
+                    : `<div class="fav-card-title">${escapeHtml(title)}</div>`}
+                </div>
+              </div>
+              <div class="fav-price-row">
+                <span class="fav-price-main">${lastPrice > 0 ? `${formatNum(lastPrice)} ₽` : 'Цена не указана'}</span>
+                ${dropAmt > 0 ? `<span class="fav-drop-badge">📉 -${formatNum(dropAmt)} ₽ (была ${formatNum(fav.price)} ₽)</span>` : ''}
+              </div>
+              <textarea class="fav-note-input" data-ad-id="${escapeHtml(adId)}" rows="2" placeholder="Заметка по авто (осмотр, VIN, торг)...">${escapeHtml(fav.note || '')}</textarea>
+              <div class="fav-actions-row">
+                ${safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn-small" style="text-decoration:none; display:inline-flex; align-items:center;">🔗 Открыть</a>` : ''}
+                <button type="button" class="btn-small btn-save-fav-note" data-ad-id="${escapeHtml(adId)}">💾 Заметка</button>
+                <button type="button" class="btn-small danger btn-del-fav" data-ad-id="${escapeHtml(adId)}">Удалить</button>
+              </div>
+            `;
+            el.favoritesList.appendChild(card);
+          });
+
+          el.favoritesList.querySelectorAll('.btn-save-fav-note').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              triggerHaptic('light');
+              const adId = btn.dataset.adId;
+              const card = btn.closest('.fav-card');
+              const noteEl = card ? card.querySelector('.fav-note-input') : null;
+              const noteVal = noteEl ? noteEl.value : '';
+              try {
+                btn.disabled = true;
+                await apiFetch(`/api/favorites/${encodeURIComponent(adId)}/note`, {
+                  method: 'POST',
+                  body: JSON.stringify({ note: noteVal })
+                });
+                const target = state.favorites.find(x => String(x.ad_id) === String(adId));
+                if (target) target.note = noteVal;
+                showToast('Заметка сохранена', 'success');
+                triggerHaptic('success');
+              } catch (err) {
+                showToast('Ошибка сохранения заметки: ' + (err.message || err), 'error');
+                triggerHaptic('error');
+              } finally {
+                btn.disabled = false;
+              }
+            });
+          });
+
+          el.favoritesList.querySelectorAll('.btn-del-fav').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              triggerHaptic('warning');
+              const adId = btn.dataset.adId;
+              try {
+                btn.disabled = true;
+                await apiFetch(`/api/favorites/${encodeURIComponent(adId)}`, { method: 'DELETE' });
+                state.favorites = state.favorites.filter(x => String(x.ad_id) !== String(adId));
+                renderFavorites();
+                showToast('Удалено из избранного', 'info');
+              } catch (err) {
+                showToast('Ошибка удаления: ' + (err.message || err), 'error');
+                triggerHaptic('error');
+                btn.disabled = false;
+              }
+            });
+          });
+        }
+
+        // 13. Tab Navigation Switching
+         function switchTab(tabName) {           triggerHaptic('light');           state.activeTab = tabName;                  if (el.tabBtnFilters) el.tabBtnFilters.classList.toggle('active', tabName === 'filters');           if (el.tabBtnFav) el.tabBtnFav.classList.toggle('active', tabName === 'favorites');           if (el.tabBtnSub) el.tabBtnSub.classList.toggle('active', tabName === 'sub');           if (el.tabBtnStopwords) el.tabBtnStopwords.classList.toggle('active', tabName === 'stopwords');           if (el.tabBtnAdmin) el.tabBtnAdmin.classList.toggle('active', tabName === 'admin');
+                         if (el.tabFilters) el.tabFilters.classList.toggle('hidden', tabName !== 'filters');           if (el.tabFav) el.tabFav.classList.toggle('hidden', tabName !== 'favorites');           if (el.tabSub) el.tabSub.classList.toggle('hidden', tabName !== 'sub');           if (el.tabStopwords) el.tabStopwords.classList.toggle('hidden', tabName !== 'stopwords');           if (el.tabAdmin) el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');                  if (tabName === 'sub') {             renderSubscriptionTab();           } else if (tabName === 'favorites') {             loadFavorites();           } else if (tabName === 'admin') {             loadAdminUsers();           }         }                // 14. Event Listeners Setup
          function initEvents() {
                   // Navigation Tabs
-           if (el.tabBtnFilters) el.tabBtnFilters.addEventListener('click', () => switchTab('filters'));           if (el.tabBtnSub) el.tabBtnSub.addEventListener('click', () => switchTab('sub'));           if (el.tabBtnStopwords) el.tabBtnStopwords.addEventListener('click', () => switchTab('stopwords'));           if (el.tabBtnAdmin) {             el.tabBtnAdmin.addEventListener('click', () => switchTab('admin'));           }                  // Subscription Tab: Contact Admin Button
+           if (el.tabBtnFilters) el.tabBtnFilters.addEventListener('click', () => switchTab('filters'));           if (el.tabBtnFav) el.tabBtnFav.addEventListener('click', () => switchTab('favorites'));           if (el.tabBtnSub) el.tabBtnSub.addEventListener('click', () => switchTab('sub'));           if (el.tabBtnStopwords) el.tabBtnStopwords.addEventListener('click', () => switchTab('stopwords'));           if (el.tabBtnAdmin) {             el.tabBtnAdmin.addEventListener('click', () => switchTab('admin'));           }                  // Subscription Tab: Contact Admin Button
     if (el.btnContactAdmin) {
       el.btnContactAdmin.addEventListener('click', () => {
         triggerHaptic('light');
