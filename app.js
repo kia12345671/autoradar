@@ -292,15 +292,41 @@
                   el.fDromMake.value = '';           el.fDromModel.value = '';           el.fAutoruMake.value = '';           el.fAutoruModel.value = '';           el.fAvitoQuery.value = '';                  if (!preserveExistingYears) {             clearYearInputs();           }                  el.selectedMakeName.textContent = '✨ Любое авто (по параметрам)';
                   el.selectedMakeBadge.classList.remove('hidden');           el.makeInputWrapper.classList.add('hidden');           el.makeStatusHint.textContent = 'Поиск по параметрам';
                          el.modelSelectionGroup.classList.add('hidden');
-                  if (el.originFilterGroup) el.originFilterGroup.classList.remove('hidden');           closeDropdowns();         }                function selectMake(makeObj, preserveExistingYears = false) {           triggerHaptic('light');           state.isAnyCar = false;           state.selectedMake = makeObj;           state.selectedModel = null;                  el.fSearchMode.value = 'make_only';           el.fMake.value = makeObj.id;           el.fModel.value = '';           el.fDisplayName.value = makeObj.name;           el.fDromMake.value = makeObj.drom_slug || makeObj.id;
-                  el.fAutoruMake.value = makeObj.autoru_slug || makeObj.id;           el.fAvitoQuery.value = makeObj.name;                  if (!preserveExistingYears) {             clearYearInputs();           }           if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');                  // Show Make Badge
+                  if (el.originFilterGroup) el.originFilterGroup.classList.remove('hidden');           closeDropdowns();         }                function cleanMakeForAvito(makeObj) {
+  if (!makeObj) return '';
+  if (makeObj.avito_query) return makeObj.avito_query;
+  return (makeObj.name || '').replace(/\([^)]*\)/g, '').replace(/\//g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function selectMake(makeObj, preserveExistingYears = false) {
+  triggerHaptic('light');
+  state.isAnyCar = false;
+  state.selectedMake = makeObj;
+  state.selectedModel = null;
+
+  el.fSearchMode.value = 'make_only';
+  el.fMake.value = makeObj.id;
+  el.fModel.value = '';
+  el.fDisplayName.value = makeObj.name;
+  el.fDromMake.value = makeObj.drom_slug || makeObj.id;
+                  el.fAutoruMake.value = makeObj.autoru_slug || makeObj.id;
+  el.fAvitoQuery.value = cleanMakeForAvito(makeObj);                  if (!preserveExistingYears) {             clearYearInputs();           }           if (el.originFilterGroup) el.originFilterGroup.classList.add('hidden');                  // Show Make Badge
            el.selectedMakeName.textContent = makeObj.name;           el.selectedMakeBadge.classList.remove('hidden');           el.makeInputWrapper.classList.add('hidden');           el.makeStatusHint.textContent = 'Марка выбрана';
                          // Show Model Selection Group
            el.modelSelectionGroup.classList.remove('hidden');           el.modelInputWrapper.classList.remove('hidden');           el.selectedModelBadge.classList.add('hidden');           el.modelInput.value = '';           el.btnClearModel.classList.add('hidden');           el.modelStatusHint.textContent = `Все модели ${makeObj.name}`;
                          closeDropdowns();                  // Fetch models for this make
            loadModelsForMake(makeObj.id);         }                async function loadModelsForMake(makeId) {           try {             el.modelSearchSpinner.classList.remove('hidden');             const data = await apiFetch(`/api/catalog/models?make=${encodeURIComponent(makeId)}`);
-                    state.currentMakeModels = data.models || [];           } catch (err) {             console.warn('Failed to load models for make:', err);             state.currentMakeModels = [];           } finally {             el.modelSearchSpinner.classList.add('hidden');           }         }                function selectMakeOnly(preserveExistingYears = false) {           triggerHaptic('light');           if (!state.selectedMake) return;                  state.selectedModel = null;           el.fSearchMode.value = 'make_only';
-                  el.fModel.value = '';           el.fDisplayName.value = state.selectedMake.name;           el.fDromModel.value = '';           el.fAutoruModel.value = '';           el.fAvitoQuery.value = state.selectedMake.name;                  if (!preserveExistingYears) {             clearYearInputs();           }                  el.selectedModelName.textContent = `🌐 Все модели ${state.selectedMake.name}`;
+                    state.currentMakeModels = data.models || [];           } catch (err) {             console.warn('Failed to load models for make:', err);             state.currentMakeModels = [];           } finally {             el.modelSearchSpinner.classList.add('hidden');           }         }                function selectMakeOnly(preserveExistingYears = false) {
+  triggerHaptic('light');
+  if (!state.selectedMake) return;
+
+  state.selectedModel = null;
+  el.fSearchMode.value = 'make_only';
+  el.fModel.value = '';
+  el.fDisplayName.value = state.selectedMake.name;
+  el.fDromModel.value = '';
+  el.fAutoruModel.value = '';
+  el.fAvitoQuery.value = cleanMakeForAvito(state.selectedMake);                  if (!preserveExistingYears) {             clearYearInputs();           }                  el.selectedModelName.textContent = `🌐 Все модели ${state.selectedMake.name}`;
                   el.selectedModelBadge.classList.remove('hidden');           el.modelInputWrapper.classList.add('hidden');           el.modelStatusHint.textContent = 'Все модели марки';
                          closeDropdowns();         }                function selectModel(modelObj, preserveExistingYears = false) {           triggerHaptic('light');           if (!state.selectedMake) return;                  state.selectedModel = modelObj;           el.fSearchMode.value = 'exact';           el.fModel.value = modelObj.model || modelObj.id;           let cleanModelName = modelObj.name || '';           const makePrefix = (state.selectedMake.name || '').toLowerCase();           if (cleanModelName.toLowerCase().startsWith(makePrefix)) {             cleanModelName = cleanModelName.slice(state.selectedMake.name.length).trim();
                   }           const combinedName = cleanModelName ? `${state.selectedMake.name} ${cleanModelName}` : state.selectedMake.name;           el.fDisplayName.value = combinedName;           el.fDromModel.value = modelObj.drom_model || modelObj.model || modelObj.id;           el.fAutoruModel.value = modelObj.autoru_model || modelObj.model || modelObj.id;           el.fAvitoQuery.value = modelObj.avito_query || combinedName;                  // Overwrite or clear years when user selects a model/generation
@@ -356,11 +382,15 @@
                   `;           makeOnlyItem.addEventListener('click', () => selectMakeOnly(false));           el.modelDropdown.appendChild(makeOnlyItem);                  // 2. Filter models list
            let filteredModels = state.currentMakeModels;
                   if (qClean.length > 0) {             filteredModels = state.currentMakeModels.filter(m => {               const nameMatch = m.name.toLowerCase().replace(/ё/g, 'е').includes(qClean);
-                      const ruMatch = (m.ru_name || '').toLowerCase().replace(/ё/g, 'е').includes(qClean);
-                      const idMatch = (m.id || '').toLowerCase().includes(qClean);               return nameMatch || ruMatch || idMatch;             });           }                  const titleSec = document.createElement('div');           titleSec.className = 'dropdown-section-title';
+      const ruMatch = (m.ru_name || '').toLowerCase().replace(/ё/g, 'е').includes(qClean);
+      const idMatch = (m.id || '').toLowerCase().includes(qClean);
+      const aliasMatch = Array.isArray(m.aliases) && m.aliases.some(a => String(a).toLowerCase().replace(/ё/g, 'е').includes(qClean));
+      return nameMatch || ruMatch || idMatch || aliasMatch;
+    });
+  }                  const titleSec = document.createElement('div');           titleSec.className = 'dropdown-section-title';
                   titleSec.textContent = `Модели ${state.selectedMake.name}`;
                   el.modelDropdown.appendChild(titleSec);                  if (filteredModels.length === 0) {             const emptyDiv = document.createElement('div');             emptyDiv.className = 'dropdown-item';             emptyDiv.style.color = 'var(--tg-theme-hint-color)';             emptyDiv.style.justifyContent = 'center';             emptyDiv.textContent = 'Модель не найдена в списке этой марки';
-                    el.modelDropdown.appendChild(emptyDiv);           } else {             filteredModels.slice(0, 60).forEach(m => {
+                    el.modelDropdown.appendChild(emptyDiv);           } else {             filteredModels.slice(0, 150).forEach(m => {
                       const item = document.createElement('div');               item.className = 'dropdown-item';               let yearsStr = '';               if (m.years && Array.isArray(m.years) && m.years.length === 2) {                 yearsStr = `${m.years[0]}–${m.years[1]}`;               }               item.innerHTML = `                 <div class="dropdown-item-main">                   <span class="dropdown-item-title">${escapeHtml(m.name)}</span>                   ${m.ru_name && m.ru_name !== m.name ? `<span class="dropdown-item-sub">${escapeHtml(m.ru_name)}</span>` : ''}
                         </div>                 ${yearsStr ? `<span class="dropdown-item-badge">${escapeHtml(yearsStr)}</span>` : ''}               `;               item.addEventListener('click', () => selectModel(m));               el.modelDropdown.appendChild(item);             });           }                  el.modelDropdown.classList.remove('hidden');         }                // 8. Gearbox Selector Logic (Two-Level: Any / MT / AT (all) + Subchips AT/AMT/CVT)
          function setGearboxMode(mode) {           if (mode === 'mt') {             state.selectedGearboxes = new Set(['mt']);
