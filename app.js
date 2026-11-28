@@ -154,21 +154,12 @@
                     el.subStatusRole.classList.add('expired');
                     expiresLabel = 'Доступ приостановлен';
                   }                  if (el.subStatusExpires) el.subStatusExpires.textContent = expiresLabel;           if (el.subStatusSlots) el.subStatusSlots.textContent = `${activeCount} из ${limitDisplay}`;
-                  const qEnabled = document.getElementById('quiet-hours-enabled');
-                  const qFrom = document.getElementById('quiet-from');
-                  const qTo = document.getElementById('quiet-to');
-                  const qInputs = document.getElementById('quiet-hours-inputs');
-                  const hasQuiet = Boolean(state.user.quiet_from && state.user.quiet_to);
-                  if (qEnabled) qEnabled.checked = hasQuiet;
-                  if (qFrom && state.user.quiet_from) qFrom.value = state.user.quiet_from;
-                  if (qTo && state.user.quiet_to) qTo.value = state.user.quiet_to;
-                  if (qInputs) qInputs.style.opacity = (!qEnabled || qEnabled.checked) ? '1' : '0.45';
                 }                // Format Helpers: dots delimiter (123.456) and clean parsers
          function formatWithDots(val) {           if (val === null || val === undefined) return '';           const digits = String(val).replace(/\D/g, '');           if (!digits) return '';           return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
                 }                function parseCleanInt(val) {           if (val === null || val === undefined) return null;           const digits = String(val).replace(/[\s.\u00a0]/g, '').replace(/\D/g, '');           if (!digits) return null;           const n = parseInt(digits, 10);           return Number.isFinite(n) ? n : null;         }                function parseCleanFloat(val) {           if (val === null || val === undefined) return null;           const cleaned = String(val).trim().replace(/,/g, '.').replace(/[^\d.]/g, '');           if (!cleaned) return null;
                   const f = parseFloat(cleaned);           return Number.isFinite(f) ? f : null;         }                function formatNum(n) {           if (n === null || n === undefined || n === '') return '';           return formatWithDots(n);         }                // 5. Render Filters List
          function renderFilters() {           el.filtersLoading.classList.add('hidden');           el.filtersCounter.textContent = state.filters.length;                  if (!state.filters || state.filters.length === 0) {             el.filtersEmpty.classList.remove('hidden');             el.filtersList.innerHTML = '';
-                    return;           }                  el.filtersEmpty.classList.add('hidden');           el.filtersList.innerHTML = '';                  state.filters.forEach(filter => {             if (!filter) return;             try {               const card = document.createElement('div');               const isEnabled = Boolean(filter.notifications_enabled);               card.className = `filter-card ${isEnabled ? '' : 'disabled'}`;               card.id = `filter-card-${filter.id}`;                      // Mode tag
+                    return;           }                  el.filtersEmpty.classList.add('hidden');           el.filtersList.innerHTML = '';                  setTimeout(() => hydrateFilterMarketBadges(state.filters), 0);                  state.filters.forEach(filter => {             if (!filter) return;             try {               const card = document.createElement('div');               const isEnabled = Boolean(filter.notifications_enabled);               card.className = `filter-card ${isEnabled ? '' : 'disabled'}`;               card.id = `filter-card-${filter.id}`;                      // Mode tag
                let modeText = 'Точный выбор';
                       let modeClass = 'exact';               if (filter.search_mode === 'make_only') {
                         modeText = 'Вся марка';
@@ -212,9 +203,9 @@
                             cName = found.name;                   } else {                     cName = String(filter.city).charAt(0).toUpperCase() + String(filter.city).slice(1);                   }                 }               }               const rad = parseInt(filter.radius_km, 10) || 0;               const radText = (rad > 0 && cityKey !== 'rossiya') ? ` (+${rad} км)` : '';
                       specs.push(`<span class="spec-chip"><span class="spec-icon">📍</span> ${escapeHtml(cName)}${radText}</span>`);
                              card.innerHTML = `                 <div class="card-top-row">
-                          <div class="card-title-group">                     <div class="card-badge-row">                       <span class="card-mode-tag ${modeClass}">${modeText}</span>${filter.only_owners ? ' <span class="card-mode-tag owner_tag">👤 Собственник</span>' : ''}                     </div>                     <div class="card-title">${escapeHtml(title)}</div>                   </div>                   <label class="toggle-switch" title="Включить/выключить уведомления">
-                            <input type="checkbox" class="filter-toggle" data-id="${filter.id}" ${isEnabled ? 'checked' : ''}>                     <span class="slider"></span>
-                          </label>                 </div>                        <div class="card-specs">                   ${specs.length > 0 ? specs.join('') : '<span class="spec-chip">Без ограничений параметров</span>'}
+                          <div class="card-title-group">                     <div class="card-badge-row">                       <span class="card-mode-tag ${modeClass}">${modeText}</span>${filter.only_owners ? ' <span class="card-mode-tag owner_tag">👤 Собственник</span>' : ''}                     </div>                     <div class="card-title">${escapeHtml(title)}</div>                   </div>                   <div class="card-top-actions">                     <label class="toggle-switch" title="Включить/выключить уведомления">
+                               <input type="checkbox" class="filter-toggle" data-id="${filter.id}" ${isEnabled ? 'checked' : ''}>                       <span class="slider"></span>
+                             </label>                     <span class="filter-market-badge hidden" id="filter-market-${filter.id}"></span>                   </div>                 </div>                        <div class="card-specs">                   ${specs.length > 0 ? specs.join('') : '<span class="spec-chip">Без ограничений параметров</span>'}
                         </div>                        <div class="card-bottom-row">                   <span class="card-status-text" id="status-text-${filter.id}">                     ${isEnabled ? '🔔 Уведомления включены' : '🔕 Уведомления отключены'}
                           </span>
                           <div class="card-btn-group">                     <button class="btn-small btn-edit" data-id="${filter.id}">Изменить</button>
@@ -461,7 +452,7 @@ function selectMake(makeObj, preserveExistingYears = false) {
                       autoru_model: f.autoru_model || f.model,               avito_query: f.avito_query || f.display_name || `${prettyMakeName} ${prettyModelName}`.trim()             };             selectModel(modelObj, true);           }                  // Ensure saved years are preserved verbatim
            if (el.fYearMin) el.fYearMin.value = f.year_min || '';           if (el.fYearMax) el.fYearMax.value = f.year_max || '';                  // Set Gearbox
            setGearboxFromValue(f.gearbox);           syncAllModalClearButtons();                  openModal();         }                function openModal() {
-                  el.filterModal.classList.remove('hidden');           document.body.style.overflow = 'hidden';           scheduleMarketStatsHint();         }                function closeModal() {           el.filterModal.classList.add('hidden');           document.body.style.overflow = '';           closeDropdowns();           if (el.cityDropdown) el.cityDropdown.classList.add('hidden');         }                // 11. Filter Submit Handler (POST / PUT)
+                  el.filterModal.classList.remove('hidden');           document.body.style.overflow = 'hidden';         }                function closeModal() {           el.filterModal.classList.add('hidden');           document.body.style.overflow = '';           closeDropdowns();           if (el.cityDropdown) el.cityDropdown.classList.add('hidden');         }                // 11. Filter Submit Handler (POST / PUT)
          async function handleFilterSubmit(e) {           e.preventDefault();           triggerHaptic('light');                  const mode = el.fSearchMode.value || 'exact';           const gearbox = el.fGearbox.value || 'ANY';
                          let make = el.fMake.value.trim();           let model = el.fModel.value.trim();           let displayName = el.fDisplayName.value.trim();           let dromMake = el.fDromMake.value.trim();           let dromModel = el.fDromModel.value.trim();           let autoruMake = el.fAutoruMake.value.trim();           let autoruModel = el.fAutoruModel.value.trim();           let avitoQuery = el.fAvitoQuery.value.trim();                  if (mode === 'any_car') {             displayName = 'Любое авто';
                   }                  const yearMin = parseCleanInt(el.fYearMin ? el.fYearMin.value : '');
@@ -657,46 +648,45 @@ function selectMake(makeObj, preserveExistingYears = false) {
           });
         }
 
-        // 13b. Live Feed, Market Price Hint, and Quiet Hours
+        // 13b. Live Feed and Compact Filter Card Market Badges
         function fmtSpaces(n) {
           const num = parseInt(n || 0, 10) || 0;
           return String(num).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
         }
 
-        let _marketStatsTimer = null;
-        function scheduleMarketStatsHint() {
-          if (_marketStatsTimer) clearTimeout(_marketStatsTimer);
-          _marketStatsTimer = setTimeout(refreshMarketStatsHint, 280);
-        }
-
-        async function refreshMarketStatsHint() {
-          const hintEl = document.getElementById('market-stats-hint');
-          if (!hintEl) return;
-          const makeVal = el.fMake ? el.fMake.value.trim() : '';
-          if (!makeVal || (el.fSearchMode && el.fSearchMode.value === 'any_car')) {
-            hintEl.classList.add('hidden');
-            hintEl.textContent = '';
-            return;
-          }
-          const qs = new URLSearchParams();
-          qs.set('make', makeVal);
-          if (el.fModel && el.fModel.value.trim()) qs.set('model', el.fModel.value.trim());
-          const yMin = parseCleanInt(el.fYearMin ? el.fYearMin.value : '');
-          const yMax = parseCleanInt(el.fYearMax ? el.fYearMax.value : '');
-          if (yMin) qs.set('year_min', String(yMin));
-          if (yMax) qs.set('year_max', String(yMax));
-          if (el.fCity && el.fCity.value.trim()) qs.set('city', el.fCity.value.trim());
-          try {
-            const data = await apiFetch(`/api/market-stats?${qs.toString()}`);
-            if (data && data.sample_count >= 3 && data.median_price > 0) {
-              hintEl.textContent = `📊 Рынок: медиана ${fmtSpaces(data.median_price)} ₽ (от ${fmtSpaces(data.min_price)} до ${fmtSpaces(data.max_price)} ₽, по ${data.sample_count} авто)`;
-              hintEl.classList.remove('hidden');
-            } else {
-              hintEl.classList.add('hidden');
-              hintEl.textContent = '';
+        const _marketBadgeCache = {};
+        async function hydrateFilterMarketBadges(filtersList) {
+          if (!Array.isArray(filtersList) || filtersList.length === 0) return;
+          for (const f of filtersList) {
+            if (!f || !f.id || !f.make || f.search_mode === 'any_car') continue;
+            const badgeEl = document.getElementById(`filter-market-${f.id}`);
+            if (!badgeEl) continue;
+            const cacheKey = [f.make, f.model || '', f.year_min || '', f.year_max || '', f.city || ''].join('|').toLowerCase();
+            if (_marketBadgeCache[cacheKey]) {
+              const cached = _marketBadgeCache[cacheKey];
+              if (cached.median_price > 0 && cached.sample_count >= 3) {
+                badgeEl.textContent = `📊 ~${fmtSpaces(cached.median_price)} ₽`;
+                badgeEl.classList.remove('hidden');
+              }
+              continue;
             }
-          } catch (e) {
-            hintEl.classList.add('hidden');
+            const qs = new URLSearchParams();
+            qs.set('make', String(f.make));
+            if (f.model) qs.set('model', String(f.model));
+            if (f.year_min) qs.set('year_min', String(f.year_min));
+            if (f.year_max) qs.set('year_max', String(f.year_max));
+            if (f.city) qs.set('city', String(f.city));
+            try {
+              const data = await apiFetch(`/api/market-stats?${qs.toString()}`);
+              _marketBadgeCache[cacheKey] = data || {};
+              const freshEl = document.getElementById(`filter-market-${f.id}`);
+              if (freshEl && data && data.sample_count >= 3 && data.median_price > 0) {
+                freshEl.textContent = `📊 ~${fmtSpaces(data.median_price)} ₽`;
+                freshEl.classList.remove('hidden');
+              }
+            } catch (e) {
+              // Silent fallback when market stats unavailable
+            }
           }
         }
 
@@ -734,31 +724,6 @@ function selectMake(makeObj, preserveExistingYears = false) {
           }
         }
 
-        async function saveQuietHours() {
-          const qEnabled = document.getElementById('quiet-hours-enabled');
-          const qFrom = document.getElementById('quiet-from');
-          const qTo = document.getElementById('quiet-to');
-          const enabled = qEnabled ? qEnabled.checked : false;
-          const quiet_from = enabled ? (qFrom?.value || '23:00') : '';
-          const quiet_to = enabled ? (qTo?.value || '08:00') : '';
-          try {
-            const res = await apiFetch('/api/me/quiet-hours', {
-              method: 'PUT',
-              body: JSON.stringify({ quiet_from, quiet_to })
-            });
-            if (state.user) {
-              state.user.quiet_from = res.quiet_from || '';
-              state.user.quiet_to = res.quiet_to || '';
-              try { localStorage.setItem('ar_cached_user', JSON.stringify(state.user)); } catch (e) {}
-            }
-            showToast(enabled ? `Тихий режим: ${res.quiet_from}–${res.quiet_to}` : 'Тихий режим отключён', 'success');
-            triggerHaptic('success');
-          } catch (err) {
-            showToast('Ошибка: ' + (err.message || err), 'error');
-            triggerHaptic('error');
-          }
-        }
-
         // 13. Tab Navigation Switching
          function switchTab(tabName) {           triggerHaptic('light');           state.activeTab = tabName;                  if (el.tabBtnFilters) el.tabBtnFilters.classList.toggle('active', tabName === 'filters');           if (el.tabBtnFav) el.tabBtnFav.classList.toggle('active', tabName === 'favorites');           if (el.tabBtnSub) el.tabBtnSub.classList.toggle('active', tabName === 'sub');           if (el.tabBtnStopwords) el.tabBtnStopwords.classList.toggle('active', tabName === 'stopwords');           if (el.tabBtnAdmin) el.tabBtnAdmin.classList.toggle('active', tabName === 'admin');
                          if (el.tabFilters) el.tabFilters.classList.toggle('hidden', tabName !== 'filters');           if (el.tabFav) el.tabFav.classList.toggle('hidden', tabName !== 'favorites');           if (el.tabSub) el.tabSub.classList.toggle('hidden', tabName !== 'sub');           if (el.tabStopwords) el.tabStopwords.classList.toggle('hidden', tabName !== 'stopwords');           if (el.tabAdmin) el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');                  if (tabName === 'sub') {             renderSubscriptionTab();           } else if (tabName === 'favorites') {             loadFavorites();           } else if (tabName === 'admin') {             loadAdminUsers();           }         }                // 14. Event Listeners Setup
@@ -789,24 +754,6 @@ function selectMake(makeObj, preserveExistingYears = false) {
         triggerHaptic('light');
         loadFeed();
       });
-    }
-    const qEnabledEl = document.getElementById('quiet-hours-enabled');
-    const qSaveBtn = document.getElementById('btn-save-quiet-hours');
-    if (qEnabledEl) {
-      qEnabledEl.addEventListener('change', () => {
-        const qInputs = document.getElementById('quiet-hours-inputs');
-        if (qInputs) qInputs.style.opacity = qEnabledEl.checked ? '1' : '0.45';
-      });
-    }
-    if (qSaveBtn) {
-      qSaveBtn.addEventListener('click', () => {
-        triggerHaptic('light');
-        saveQuietHours();
-      });
-    }
-    if (el.filterModal) {
-      el.filterModal.addEventListener('input', scheduleMarketStatsHint);
-      el.filterModal.addEventListener('click', () => setTimeout(scheduleMarketStatsHint, 80));
     }                  // Admin Tab Refresh & Bulk Actions
            if (el.btnAdminRefresh) {             el.btnAdminRefresh.addEventListener('click', () => {               triggerHaptic('light');               loadAdminUsers();             });           }           if (el.btnAdminPauseAll) {             el.btnAdminPauseAll.addEventListener('click', async () => {               triggerHaptic('warning');               const ok = await showConfirmDialog('Отключить активные фильтры всем пользователям (кроме админа)?');
                       if (!ok) return;
@@ -833,9 +780,30 @@ function selectMake(makeObj, preserveExistingYears = false) {
                     }, 150);           });                  bindClearButton(el.btnClearModel, () => {             el.modelInput.value = '';             el.btnClearModel.classList.add('hidden');             el.modelInput.focus();             renderModelDropdown('');           });                  el.btnChangeModel.addEventListener('click', () => {             triggerHaptic('light');             clearYearInputs();             el.selectedModelBadge.classList.add('hidden');             el.modelInputWrapper.classList.remove('hidden');             el.modelInput.value = '';             syncClearBtn(el.modelInput, el.btnClearModel);
                     el.modelInput.focus();             renderModelDropdown('');           });                  // Clear buttons for Years, HP, Engine Volumes
            const simpleClearPairs = [             [el.fYearMin, el.btnClearYearMin],             [el.fYearMax, el.btnClearYearMax],             [el.fHpMin, el.btnClearHpMin],             [el.fHpMax, el.btnClearHpMax],             [el.fEngineVolMin, el.btnClearEngineVolMin],             [el.fEngineVolMax, el.btnClearEngineVolMax]           ];           simpleClearPairs.forEach(([inputEl, btnEl]) => {             if (!inputEl || !btnEl) return;
-                    inputEl.addEventListener('input', () => syncClearBtn(inputEl, btnEl));             inputEl.addEventListener('focus', () => syncClearBtn(inputEl, btnEl));             bindClearButton(btnEl, () => {               inputEl.value = '';               btnEl.classList.add('hidden');               inputEl.focus();             });           });                  // Dot-formatting (123.456) for Price & Mileage inputs
-           [el.fPriceMin, el.fPriceMax, el.fMileageMax].forEach(inputEl => {             if (!inputEl) return;             inputEl.addEventListener('input', () => {
-                      const formatted = formatWithDots(inputEl.value);               if (inputEl.value !== formatted) {                 inputEl.value = formatted;               }             });           });                  // Origin filter events
+                    inputEl.addEventListener('input', () => syncClearBtn(inputEl, btnEl));             inputEl.addEventListener('focus', () => syncClearBtn(inputEl, btnEl));             bindClearButton(btnEl, () => {               inputEl.value = '';               btnEl.classList.add('hidden');               inputEl.focus();             });           });                  // Dot-formatting (123.456) for Price & Mileage inputs with Android cursor preservation
+           [el.fPriceMin, el.fPriceMax, el.fMileageMax].forEach(inputEl => {
+             if (!inputEl) return;
+             inputEl.addEventListener('input', () => {
+               const raw = inputEl.value;
+               const formatted = formatWithDots(raw);
+               if (raw !== formatted) {
+                 const selStart = inputEl.selectionStart;
+                 const digitsBefore = (selStart !== null)
+                   ? raw.slice(0, selStart).replace(/\D/g, '').length
+                   : null;
+                 inputEl.value = formatted;
+                 if (digitsBefore !== null && typeof inputEl.setSelectionRange === 'function') {
+                   let pos = 0;
+                   let seen = 0;
+                   while (pos < formatted.length && seen < digitsBefore) {
+                     if (/\d/.test(formatted[pos])) seen++;
+                     pos++;
+                   }
+                   try { inputEl.setSelectionRange(pos, pos); } catch (e) {}
+                 }
+               }
+             });
+           });                  // Origin filter events
            if (el.btnOriginExclude) {             el.btnOriginExclude.addEventListener('click', () => {               triggerHaptic('light');               setOriginMode('exclude');             });           }           if (el.btnOriginInclude) {             el.btnOriginInclude.addEventListener('click', () => {               triggerHaptic('light');               setOriginMode('include');
                     });           }           if (el.originChips) {             el.originChips.querySelectorAll('.origin-chip').forEach(chip => {               chip.addEventListener('click', () => {                 triggerHaptic('light');                 const code = chip.dataset.country;                 if (!code) return;                 if (state.originCountries.has(code)) {                   state.originCountries.delete(code);                 } else {                   state.originCountries.add(code);                 }                 renderOriginFilterUI();               });
                     });           }                  // Close all dropdowns on outside click / tap outside their .cascading-group

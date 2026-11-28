@@ -118,26 +118,6 @@
           </div>
         </div>
 
-        <div class="quiet-hours-card">
-          <div class="quiet-hours-row">
-            <div>
-              <div style="font-weight: 600; font-size: 14px;">🌙 Тихий режим уведомлений</div>
-              <div style="font-size: 12px; color: var(--tg-theme-hint-color);">Без звука в выбранные часы</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="quiet-hours-enabled">
-              <span class="slider round"></span>
-            </label>
-          </div>
-          <div class="quiet-hours-inputs" id="quiet-hours-inputs">
-            <span style="font-size: 12.5px; color: var(--tg-theme-hint-color);">С</span>
-            <input type="time" id="quiet-from" class="quiet-time-input" value="23:00">
-            <span style="font-size: 12.5px; color: var(--tg-theme-hint-color);">до</span>
-            <input type="time" id="quiet-to" class="quiet-time-input" value="08:00">
-          </div>
-          <button type="button" id="btn-save-quiet-hours" class="secondary-btn" style="width: 100%; padding: 8px 12px; font-size: 13px;">Сохранить тихие часы</button>
-        </div>
-
         <div class="tariffs-grid">
           <div class="tariff-card">
             <div class="tariff-top">
@@ -354,7 +334,6 @@
               <div class="input-col">
                 <input type="text" inputmode="numeric" id="f-price-max" class="text-input" placeholder="До 500.000" autocomplete="off">
               </div>
-              <div id="market-stats-hint" class="market-stats-hint hidden"></div>
             </div>
             <!-- Quick Chips -->
             <div class="chips-row">

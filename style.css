@@ -402,15 +402,19 @@ input, textarea {
 }
 
 /* Native-style Toggle Switch */
-.toggle-switch {
+.toggle-switch,
+.switch {
   position: relative;
   display: inline-block;
   width: 52px;
   height: 30px;
   flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 30px;
 }
 
-.toggle-switch input {
+.toggle-switch input,
+.switch input {
   opacity: 0;
   width: 0;
   height: 0;
@@ -423,6 +427,8 @@ input, textarea {
   left: 0;
   right: 0;
   bottom: 0;
+  max-width: 52px;
+  max-height: 30px;
   background-color: rgba(255, 255, 255, 0.18);
   transition: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 30px;
@@ -1123,10 +1129,12 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
 }
 
 .input-col {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .input-sep {
@@ -1209,6 +1217,10 @@ input:checked + .slider:before {
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
+  display: inline-block;
+  width: auto;
+  max-width: 90%;
+  height: auto;
   background: rgba(30, 30, 30, 0.95);
   border: 1px solid var(--border-light);
   color: #fff;
@@ -1220,6 +1232,9 @@ input:checked + .slider:before {
   backdrop-filter: blur(8px);
   transition: opacity 0.25s ease, transform 0.25s ease;
   pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toast.hidden {
@@ -1228,10 +1243,18 @@ input:checked + .slider:before {
 }
 
 .toast.success {
+  width: auto;
+  max-width: 90%;
+  height: auto;
+  background: rgba(30, 30, 30, 0.95);
   border-color: rgba(49, 181, 69, 0.5);
 }
 
 .toast.error {
+  width: auto;
+  max-width: 90%;
+  height: auto;
+  background: rgba(30, 30, 30, 0.95);
   border-color: rgba(229, 57, 53, 0.5);
 }
 
@@ -1887,16 +1910,24 @@ input:checked + .slider:before {
 
 
 
-/* ─── v4 Analytics, Favorites Price History, Feed & Quiet Hours ─────────────── */
-.market-stats-hint {
-  margin-top: 8px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  color: var(--tg-theme-text-color, #e5e7eb);
-  font-size: 12.5px;
-  line-height: 1.4;
+/* ─── v4 Analytics, Favorites Price History & Feed ─────────────────────────── */
+.card-top-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.filter-market-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  color: #93c5fd;
+  white-space: nowrap;
 }
 
 .fav-price-history {
@@ -1986,37 +2017,4 @@ input:checked + .slider:before {
 
 .feed-badge-drop {
   color: #34d399;
-}
-
-.quiet-hours-card {
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 14px;
-  background: var(--tg-theme-secondary-bg-color, #1e293b);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.quiet-hours-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.quiet-hours-inputs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.quiet-time-input {
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.22);
-  color: var(--tg-theme-text-color, #fff);
-  font-size: 14px;
 }
