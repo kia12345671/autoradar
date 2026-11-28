@@ -26,18 +26,18 @@
                   return msg.includes('load failed') ||                  msg.includes('failed to fetch') ||                  msg.includes('networkerror') ||                  msg.includes('network request failed') ||                  msg.includes('connection');         }                // API Fetch Helper with Telegram auth header and 2 automatic retries on network drops / 502/503/504
          async function apiFetch(path, options = {}) {           // Read window.Telegram.WebApp.initData dynamically on every request
            const dynamicInitData = window.Telegram?.WebApp?.initData || tg?.initData || '';
-                  const headers = {             'Content-Type': 'application/json',             'X-Telegram-Init-Data': dynamicInitData,             ...(options.headers || {})           };                  const maxRetries = 2; // 1 initial attempt + 2 automatic retries (delays: 800ms, 1500ms)
-           const retryDelays = [800, 1500];                  for (let attempt = 0; attempt <= maxRetries; attempt++) {             if (attempt > 0) {               try {                 await resolveApiBase(true);               } catch (e) {                 console.warn('[apiFetch] Error refreshing api_base on retry:', e);
+                  const headers = {             'Content-Type': 'application/json',             'X-Telegram-Init-Data': dynamicInitData,             ...(options.headers || {})           };                  const maxRetries = 2; const reqMaxRetries = ['GET', 'HEAD', 'PUT', 'DELETE', 'OPTIONS'].includes(String(options.method || 'GET').trim().toUpperCase()) ? maxRetries : 0; // Retries ONLY for idempotent methods (never duplicate POST)
+           const retryDelays = [800, 1500];                  for (let attempt = 0; attempt <= reqMaxRetries; attempt++) {             if (attempt > 0) {               try {                 await resolveApiBase(true);               } catch (e) {                 console.warn('[apiFetch] Error refreshing api_base on retry:', e);
                       }             }             const apiBase = await resolveApiBase();             const url = `${apiBase}${path}`;                    try {               const resp = await fetch(url, { ...options, headers });               if (resp.status === 204) {                 return null;               }                      // Automatic retry on transient tunnel / gateway restart (502, 503, 504)
-               if (resp.status === 502 || resp.status === 503 || resp.status === 504) {                 if (attempt < maxRetries) {
-                          console.warn(`[apiFetch] Server/tunnel status ${resp.status} on ${path}. Retrying in ${retryDelays[attempt]}ms (attempt ${attempt + 1}/${maxRetries})...`);                   await new Promise(r => setTimeout(r, retryDelays[attempt]));                   continue;                 }                 const err = new Error(FRIENDLY_NETWORK_ERROR);                 err.status = resp.status;                 err.detail = FRIENDLY_NETWORK_ERROR;                 throw err;               }                      const data = await resp.json().catch(() => ({}));
+               if (resp.status === 502 || resp.status === 503 || resp.status === 504) {                 if (attempt < reqMaxRetries) {
+                          console.warn(`[apiFetch] Server/tunnel status ${resp.status} on ${path}. Retrying in ${retryDelays[attempt]}ms (attempt ${attempt + 1}/${reqMaxRetries})...`);                   await new Promise(r => setTimeout(r, retryDelays[attempt]));                   continue;                 }                 const err = new Error(FRIENDLY_NETWORK_ERROR);                 err.status = resp.status;                 err.detail = FRIENDLY_NETWORK_ERROR;                 throw err;               }                      const data = await resp.json().catch(() => ({}));
                       if (!resp.ok) {                 if (resp.status === 401 && (!dynamicInitData || String(data?.detail || '').toLowerCase().includes('missing x-telegram-init-data') || String(data?.detail || '').toLowerCase().includes('init-data'))) {                   const authMsg = "Откройте приложение через кнопку «🚀 Открыть АвтоРадар» в сообщении бота или через левую кнопку меню.";
                           const err = new Error(authMsg);
                           err.status = 401;                   err.detail = authMsg;                   throw err;                 }
                         let errorDetail = `Ошибка сервера (${resp.status})`;
                         if (typeof data?.detail === 'string') {                   errorDetail = data.detail;                 } else if (Array.isArray(data?.detail)) {                   errorDetail = data.detail.map(d => d.msg || JSON.stringify(d)).join(', ');                 } else if (data?.detail) {                   errorDetail = JSON.stringify(data.detail);                 }                 const err = new Error(errorDetail);                 err.status = resp.status;                 err.detail = data?.detail;
                         throw err;               }               return data;             } catch (err) {               // If it's a network drop and retries remain, wait and retry
-               if (isNetworkError(err) && attempt < maxRetries) {                 console.warn(`[apiFetch] Network error (${err.message}) on ${path}. Retrying in ${retryDelays[attempt]}ms (attempt ${attempt + 1}/${maxRetries})...`);                 await new Promise(r => setTimeout(r, retryDelays[attempt]));                 continue;               }                      console.error(`API Error [${options.method || 'GET'} ${path}]:`, err);
+               if (isNetworkError(err) && attempt < reqMaxRetries) {                 console.warn(`[apiFetch] Network error (${err.message}) on ${path}. Retrying in ${retryDelays[attempt]}ms (attempt ${attempt + 1}/${reqMaxRetries})...`);                 await new Promise(r => setTimeout(r, retryDelays[attempt]));                 continue;               }                      console.error(`API Error [${options.method || 'GET'} ${path}]:`, err);
                       if (isNetworkError(err)) {                 const friendlyErr = new Error(FRIENDLY_NETWORK_ERROR);                 friendlyErr.status = 0;                 friendlyErr.detail = FRIENDLY_NETWORK_ERROR;                 throw friendlyErr;               }               throw err;             }           }         }                // 3. Application State
          const state = {           user: null,           filters: [],           favorites: [],           favoritesLoaded: false,           stopwords: [],           activeTab: 'filters',           editingFilterId: null,                  // Catalog state
            catalogMakes: [],           currentMakeModels: [],
@@ -113,7 +113,7 @@
            try {             const cachedFilters = localStorage.getItem('ar_cached_filters');
                     const cachedUser = localStorage.getItem('ar_cached_user');             if (cachedFilters) {               const parsed = JSON.parse(cachedFilters);               if (Array.isArray(parsed) && parsed.length > 0) {                 state.filters = parsed;                 if (cachedUser) {                   state.user = JSON.parse(cachedUser);                   if (Array.isArray(state.user?.stopwords)) {                     state.stopwords = [...state.user.stopwords];                   }                 }                 renderHeader();                 renderFilters();
                       }             }           } catch (e) {             console.warn('Cache restore error:', e);           }                  try {             if (!state.filters || state.filters.length === 0) {               el.filtersLoading.classList.remove('hidden');               el.filtersEmpty.classList.add('hidden');               el.filtersList.innerHTML = '';             }                    const meData = await apiFetch('/api/me');             state.user = meData;             state.filters = meData.filters || [];             state.stopwords = meData.stopwords || [];                    try {               localStorage.setItem('ar_cached_filters', JSON.stringify(state.filters));
-                      localStorage.setItem('ar_cached_user', JSON.stringify(state.user));             } catch (e) {}                    renderHeader();             renderFilters();             renderStopwords();                    // Pre-load catalog makes and cities in background
+                      localStorage.setItem('ar_cached_user', JSON.stringify(state.user));             } catch (e) {}                    renderHeader();             renderFilters();             renderStopwords();             loadFeed();                    // Pre-load catalog makes and cities in background
              loadCatalogMakes();             loadCities();           } catch (err) {             console.error('loadData error:', err);             el.filtersLoading.classList.add('hidden');             if (err.status === 401 || err.status === 502 || err.status === 503 || err.status === 504) {
                       showToast(err.message || String(err), 'error');             } else {               showToast('Ошибка загрузки данных: ' + (err.message || err), 'error');
                     }             triggerHaptic('error');           }         }                // Load cities directory from API
@@ -154,6 +154,15 @@
                     el.subStatusRole.classList.add('expired');
                     expiresLabel = 'Доступ приостановлен';
                   }                  if (el.subStatusExpires) el.subStatusExpires.textContent = expiresLabel;           if (el.subStatusSlots) el.subStatusSlots.textContent = `${activeCount} из ${limitDisplay}`;
+                  const qEnabled = document.getElementById('quiet-hours-enabled');
+                  const qFrom = document.getElementById('quiet-from');
+                  const qTo = document.getElementById('quiet-to');
+                  const qInputs = document.getElementById('quiet-hours-inputs');
+                  const hasQuiet = Boolean(state.user.quiet_from && state.user.quiet_to);
+                  if (qEnabled) qEnabled.checked = hasQuiet;
+                  if (qFrom && state.user.quiet_from) qFrom.value = state.user.quiet_from;
+                  if (qTo && state.user.quiet_to) qTo.value = state.user.quiet_to;
+                  if (qInputs) qInputs.style.opacity = (!qEnabled || qEnabled.checked) ? '1' : '0.45';
                 }                // Format Helpers: dots delimiter (123.456) and clean parsers
          function formatWithDots(val) {           if (val === null || val === undefined) return '';           const digits = String(val).replace(/\D/g, '');           if (!digits) return '';           return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
                 }                function parseCleanInt(val) {           if (val === null || val === undefined) return null;           const digits = String(val).replace(/[\s.\u00a0]/g, '').replace(/\D/g, '');           if (!digits) return null;           const n = parseInt(digits, 10);           return Number.isFinite(n) ? n : null;         }                function parseCleanFloat(val) {           if (val === null || val === undefined) return null;           const cleaned = String(val).trim().replace(/,/g, '.').replace(/[^\d.]/g, '');           if (!cleaned) return null;
@@ -452,7 +461,7 @@ function selectMake(makeObj, preserveExistingYears = false) {
                       autoru_model: f.autoru_model || f.model,               avito_query: f.avito_query || f.display_name || `${prettyMakeName} ${prettyModelName}`.trim()             };             selectModel(modelObj, true);           }                  // Ensure saved years are preserved verbatim
            if (el.fYearMin) el.fYearMin.value = f.year_min || '';           if (el.fYearMax) el.fYearMax.value = f.year_max || '';                  // Set Gearbox
            setGearboxFromValue(f.gearbox);           syncAllModalClearButtons();                  openModal();         }                function openModal() {
-                  el.filterModal.classList.remove('hidden');           document.body.style.overflow = 'hidden';         }                function closeModal() {           el.filterModal.classList.add('hidden');           document.body.style.overflow = '';           closeDropdowns();           if (el.cityDropdown) el.cityDropdown.classList.add('hidden');         }                // 11. Filter Submit Handler (POST / PUT)
+                  el.filterModal.classList.remove('hidden');           document.body.style.overflow = 'hidden';           scheduleMarketStatsHint();         }                function closeModal() {           el.filterModal.classList.add('hidden');           document.body.style.overflow = '';           closeDropdowns();           if (el.cityDropdown) el.cityDropdown.classList.add('hidden');         }                // 11. Filter Submit Handler (POST / PUT)
          async function handleFilterSubmit(e) {           e.preventDefault();           triggerHaptic('light');                  const mode = el.fSearchMode.value || 'exact';           const gearbox = el.fGearbox.value || 'ANY';
                          let make = el.fMake.value.trim();           let model = el.fModel.value.trim();           let displayName = el.fDisplayName.value.trim();           let dromMake = el.fDromMake.value.trim();           let dromModel = el.fDromModel.value.trim();           let autoruMake = el.fAutoruMake.value.trim();           let autoruModel = el.fAutoruModel.value.trim();           let avitoQuery = el.fAvitoQuery.value.trim();                  if (mode === 'any_car') {             displayName = 'Любое авто';
                   }                  const yearMin = parseCleanInt(el.fYearMin ? el.fYearMin.value : '');
@@ -572,6 +581,11 @@ function selectMake(makeObj, preserveExistingYears = false) {
             const source = fav.source || '';
             const city = fav.city || '';
             const metaText = [source, city].filter(Boolean).join(' · ');
+            const priceHist = Array.isArray(fav.price_history) ? fav.price_history : [];
+            const histChain = priceHist.length >= 2
+              ? priceHist.map(p => `${String(parseInt(p?.price ?? p ?? 0, 10) || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} ₽`).join(' → ')
+              : '';
+            const daysOnMarket = parseInt(fav.days_on_market || 0, 10) || 0;
 
             card.innerHTML = `
               <div class="fav-card-header">
@@ -586,6 +600,8 @@ function selectMake(makeObj, preserveExistingYears = false) {
                 <span class="fav-price-main">${lastPrice > 0 ? `${formatNum(lastPrice)} ₽` : 'Цена не указана'}</span>
                 ${dropAmt > 0 ? `<span class="fav-drop-badge">📉 -${formatNum(dropAmt)} ₽ (была ${formatNum(fav.price)} ₽)</span>` : ''}
               </div>
+              ${histChain ? `<div class="fav-price-history">📈 История цены: ${escapeHtml(histChain)}</div>` : ''}
+              ${daysOnMarket >= 1 ? `<div class="fav-days-badge">⏳ В продаже: ${daysOnMarket} дн.</div>` : ''}
               <textarea class="fav-note-input" data-ad-id="${escapeHtml(adId)}" rows="2" placeholder="Заметка по авто (осмотр, VIN, торг)...">${escapeHtml(fav.note || '')}</textarea>
               <div class="fav-actions-row">
                 ${safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn-small" style="text-decoration:none; display:inline-flex; align-items:center;">🔗 Открыть</a>` : ''}
@@ -641,6 +657,108 @@ function selectMake(makeObj, preserveExistingYears = false) {
           });
         }
 
+        // 13b. Live Feed, Market Price Hint, and Quiet Hours
+        function fmtSpaces(n) {
+          const num = parseInt(n || 0, 10) || 0;
+          return String(num).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        }
+
+        let _marketStatsTimer = null;
+        function scheduleMarketStatsHint() {
+          if (_marketStatsTimer) clearTimeout(_marketStatsTimer);
+          _marketStatsTimer = setTimeout(refreshMarketStatsHint, 280);
+        }
+
+        async function refreshMarketStatsHint() {
+          const hintEl = document.getElementById('market-stats-hint');
+          if (!hintEl) return;
+          const makeVal = el.fMake ? el.fMake.value.trim() : '';
+          if (!makeVal || (el.fSearchMode && el.fSearchMode.value === 'any_car')) {
+            hintEl.classList.add('hidden');
+            hintEl.textContent = '';
+            return;
+          }
+          const qs = new URLSearchParams();
+          qs.set('make', makeVal);
+          if (el.fModel && el.fModel.value.trim()) qs.set('model', el.fModel.value.trim());
+          const yMin = parseCleanInt(el.fYearMin ? el.fYearMin.value : '');
+          const yMax = parseCleanInt(el.fYearMax ? el.fYearMax.value : '');
+          if (yMin) qs.set('year_min', String(yMin));
+          if (yMax) qs.set('year_max', String(yMax));
+          if (el.fCity && el.fCity.value.trim()) qs.set('city', el.fCity.value.trim());
+          try {
+            const data = await apiFetch(`/api/market-stats?${qs.toString()}`);
+            if (data && data.sample_count >= 3 && data.median_price > 0) {
+              hintEl.textContent = `📊 Рынок: медиана ${fmtSpaces(data.median_price)} ₽ (от ${fmtSpaces(data.min_price)} до ${fmtSpaces(data.max_price)} ₽, по ${data.sample_count} авто)`;
+              hintEl.classList.remove('hidden');
+            } else {
+              hintEl.classList.add('hidden');
+              hintEl.textContent = '';
+            }
+          } catch (e) {
+            hintEl.classList.add('hidden');
+          }
+        }
+
+        async function loadFeed() {
+          const listEl = document.getElementById('live-feed-list');
+          if (!listEl) return;
+          try {
+            const data = await apiFetch('/api/feed?limit=30');
+            const items = data?.items || [];
+            if (items.length === 0) {
+              listEl.innerHTML = '<span style="color: var(--tg-theme-hint-color); font-size: 12.5px;">За последние 24 часа пока нет событий.</span>';
+              return;
+            }
+            listEl.innerHTML = items.map(it => {
+              const title = escapeHtml(it.title || it.ad_id || 'Авто');
+              const isDrop = it.event_type === 'price_drop';
+              const badge = isDrop ? '📉 Снижение цены' : '🆕 Найдено';
+              const meta = [it.source, it.city, it.year].filter(Boolean).join(' · ');
+              const priceTxt = it.price > 0 ? `${fmtSpaces(it.price)} ₽` : '—';
+              const oldTxt = (isDrop && it.old_price > 0) ? ` <s style="font-weight:400; color:var(--tg-theme-hint-color);">${fmtSpaces(it.old_price)}</s>` : '';
+              const rawUrl = String(it.url || '').trim();
+              const safeUrl = (rawUrl.startsWith('https://') || rawUrl.startsWith('http://')) ? escapeHtml(rawUrl) : '';
+              const tagOpen = safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="feed-item">` : '<div class="feed-item">';
+              const tagClose = safeUrl ? '</a>' : '</div>';
+              return `${tagOpen}
+                <div class="feed-item-main">
+                  <div class="feed-item-title">${title}</div>
+                  <div class="feed-item-meta"><span class="${isDrop ? 'feed-badge-drop' : ''}">${badge}</span>${meta ? ` • ${escapeHtml(meta)}` : ''}</div>
+                </div>
+                <div class="feed-item-price">${priceTxt}${oldTxt}</div>
+              ${tagClose}`;
+            }).join('');
+          } catch (e) {
+            listEl.innerHTML = '<span style="color: var(--tg-theme-hint-color); font-size: 12.5px;">Не удалось загрузить ленту.</span>';
+          }
+        }
+
+        async function saveQuietHours() {
+          const qEnabled = document.getElementById('quiet-hours-enabled');
+          const qFrom = document.getElementById('quiet-from');
+          const qTo = document.getElementById('quiet-to');
+          const enabled = qEnabled ? qEnabled.checked : false;
+          const quiet_from = enabled ? (qFrom?.value || '23:00') : '';
+          const quiet_to = enabled ? (qTo?.value || '08:00') : '';
+          try {
+            const res = await apiFetch('/api/me/quiet-hours', {
+              method: 'PUT',
+              body: JSON.stringify({ quiet_from, quiet_to })
+            });
+            if (state.user) {
+              state.user.quiet_from = res.quiet_from || '';
+              state.user.quiet_to = res.quiet_to || '';
+              try { localStorage.setItem('ar_cached_user', JSON.stringify(state.user)); } catch (e) {}
+            }
+            showToast(enabled ? `Тихий режим: ${res.quiet_from}–${res.quiet_to}` : 'Тихий режим отключён', 'success');
+            triggerHaptic('success');
+          } catch (err) {
+            showToast('Ошибка: ' + (err.message || err), 'error');
+            triggerHaptic('error');
+          }
+        }
+
         // 13. Tab Navigation Switching
          function switchTab(tabName) {           triggerHaptic('light');           state.activeTab = tabName;                  if (el.tabBtnFilters) el.tabBtnFilters.classList.toggle('active', tabName === 'filters');           if (el.tabBtnFav) el.tabBtnFav.classList.toggle('active', tabName === 'favorites');           if (el.tabBtnSub) el.tabBtnSub.classList.toggle('active', tabName === 'sub');           if (el.tabBtnStopwords) el.tabBtnStopwords.classList.toggle('active', tabName === 'stopwords');           if (el.tabBtnAdmin) el.tabBtnAdmin.classList.toggle('active', tabName === 'admin');
                          if (el.tabFilters) el.tabFilters.classList.toggle('hidden', tabName !== 'filters');           if (el.tabFav) el.tabFav.classList.toggle('hidden', tabName !== 'favorites');           if (el.tabSub) el.tabSub.classList.toggle('hidden', tabName !== 'sub');           if (el.tabStopwords) el.tabStopwords.classList.toggle('hidden', tabName !== 'stopwords');           if (el.tabAdmin) el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');                  if (tabName === 'sub') {             renderSubscriptionTab();           } else if (tabName === 'favorites') {             loadFavorites();           } else if (tabName === 'admin') {             loadAdminUsers();           }         }                // 14. Event Listeners Setup
@@ -664,6 +782,31 @@ function selectMake(makeObj, preserveExistingYears = false) {
           window.location.href = adminUrl;
         }
       });
+    }
+    const btnRefreshFeed = document.getElementById('btn-refresh-feed');
+    if (btnRefreshFeed) {
+      btnRefreshFeed.addEventListener('click', () => {
+        triggerHaptic('light');
+        loadFeed();
+      });
+    }
+    const qEnabledEl = document.getElementById('quiet-hours-enabled');
+    const qSaveBtn = document.getElementById('btn-save-quiet-hours');
+    if (qEnabledEl) {
+      qEnabledEl.addEventListener('change', () => {
+        const qInputs = document.getElementById('quiet-hours-inputs');
+        if (qInputs) qInputs.style.opacity = qEnabledEl.checked ? '1' : '0.45';
+      });
+    }
+    if (qSaveBtn) {
+      qSaveBtn.addEventListener('click', () => {
+        triggerHaptic('light');
+        saveQuietHours();
+      });
+    }
+    if (el.filterModal) {
+      el.filterModal.addEventListener('input', scheduleMarketStatsHint);
+      el.filterModal.addEventListener('click', () => setTimeout(scheduleMarketStatsHint, 80));
     }                  // Admin Tab Refresh & Bulk Actions
            if (el.btnAdminRefresh) {             el.btnAdminRefresh.addEventListener('click', () => {               triggerHaptic('light');               loadAdminUsers();             });           }           if (el.btnAdminPauseAll) {             el.btnAdminPauseAll.addEventListener('click', async () => {               triggerHaptic('warning');               const ok = await showConfirmDialog('Отключить активные фильтры всем пользователям (кроме админа)?');
                       if (!ok) return;
